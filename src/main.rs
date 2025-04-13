@@ -20,7 +20,7 @@ struct Args {
 }
 
 fn main() -> Result<(), Error> {
-    let args = Args::parse();
+    let args = Args::try_parse()?;
 
     let terminal = ratatui::init();
     let app = FadeTopApp::new((
