@@ -18,7 +18,7 @@ impl StatefulWidget for TimelineWidget {
         let block = Block::default().title("Timeline").borders(Borders::TOP);
         block.clone().render(area, buf);
 
-        if let Some((tid, queue)) = state
+        if let Some((_tid, queue)) = state
             .forgetting_queues
             .write()
             .unwrap()
