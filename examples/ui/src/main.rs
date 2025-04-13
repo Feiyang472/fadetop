@@ -1,10 +1,13 @@
-use std::sync::{Arc, Mutex, RwLock};
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock};
 use std::thread;
 
 use anyhow::Error;
+use fadetop::priority::ForgettingQueueMap;
+use fadetop::priority::ForgettingQueueMapOps;
 use fadetop::{
     app::{FadeTopApp, SamplerFactory},
-    priority::{ForgettingQueue, SamplerOps},
+    priority::SamplerOps,
 };
 use py_spy::{Frame, StackTrace};
 
@@ -12,7 +15,7 @@ use py_spy::{Frame, StackTrace};
 struct MockSampler {}
 
 impl SamplerOps for MockSampler {
-    fn push_to_queue(self, queue: Arc<RwLock<ForgettingQueue>>) -> Result<(), Error> {
+    fn push_to_queue(self, queue: Arc<RwLock<ForgettingQueueMap>>) -> Result<(), Error> {
         loop {
             let frame_template = Frame {
                 name: "level0".to_string(),
@@ -41,33 +44,38 @@ impl SamplerOps for MockSampler {
                 process_info: None,
             };
 
-            thread::sleep(std::time::Duration::from_secs(1));
-            queue.write().unwrap().increment(&trace);
+            for _ in 0..10 {
+                thread::sleep(std::time::Duration::from_millis(10));
+                queue.write().unwrap().increment(&trace);
+            }
 
-            thread::sleep(std::time::Duration::from_secs(1));
-            queue.write().unwrap().increment(&trace);
+            for _ in 0..10 {
+                thread::sleep(std::time::Duration::from_millis(10));
+                queue.write().unwrap().increment(&trace);
+            }
+            for _ in 0..10 {
+                thread::sleep(std::time::Duration::from_millis(10));
+                queue.write().unwrap().increment(&StackTrace {
+                    frames: vec![
+                        Frame {
+                            name: "level3".to_string(),
+                            ..frame_template.clone()
+                        },
+                        Frame {
+                            name: "level2".to_string(),
+                            ..frame_template.clone()
+                        },
+                        Frame {
+                            name: "level1_different".to_string(),
+                            ..frame_template.clone()
+                        },
+                        trace.frames[1].clone(),
+                    ],
+                    ..trace.clone()
+                });
+            }
 
-            thread::sleep(std::time::Duration::from_secs(1));
-            queue.write().unwrap().increment(&StackTrace {
-                frames: vec![
-                    Frame {
-                        name: "level3".to_string(),
-                        ..frame_template.clone()
-                    },
-                    Frame {
-                        name: "level2".to_string(),
-                        ..frame_template.clone()
-                    },
-                    Frame {
-                        name: "level1_different".to_string(),
-                        ..frame_template.clone()
-                    },
-                    trace.frames[1].clone(),
-                ],
-                ..trace.clone()
-            });
-
-            thread::sleep(std::time::Duration::from_secs(1));
+            thread::sleep(std::time::Duration::from_millis(10));
             queue.write().unwrap().increment(&StackTrace {
                 frames: vec![
                     Frame {
@@ -83,15 +91,17 @@ impl SamplerOps for MockSampler {
                 ..trace.clone()
             });
 
-            thread::sleep(std::time::Duration::from_secs(1));
-            queue.write().unwrap().increment(&StackTrace {
-                frames: vec![Frame {
-                    name: "level2_different".to_string(),
-                    ..frame_template.clone()
-                }],
-                thread_id: 2,
-                ..trace.clone()
-            });
+            for _ in 0..10 {
+                thread::sleep(std::time::Duration::from_millis(10));
+                queue.write().unwrap().increment(&StackTrace {
+                    frames: vec![Frame {
+                        name: "level2_different".to_string(),
+                        ..frame_template.clone()
+                    }],
+                    thread_id: 2,
+                    ..trace.clone()
+                });
+            }
         }
     }
 }

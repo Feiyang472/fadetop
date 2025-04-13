@@ -1,27 +1,35 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+    time::{Duration, Instant},
+};
 
-use crate::priority::ForgettingQueue;
+use ratatui::widgets::ScrollbarState;
+
+use crate::priority::ForgettingQueueMap;
 
 #[derive(Debug)]
 pub struct AppState {
     pub selected_tab: usize,
-    pub forgetting_queue: Arc<RwLock<ForgettingQueue>>,
+    pub forgetting_queues: Arc<RwLock<ForgettingQueueMap>>,
+    pub stack_level_scroll_state: ScrollbarState,
+    pub time_scroll_state: ScrollbarState,
+    pub(crate) viewport_time_bound: (Option<Instant>, Duration),
 }
 
 impl AppState {
     pub fn new() -> Self {
         Self {
             selected_tab: 0,
-            forgetting_queue: Arc::new(RwLock::new(ForgettingQueue::new())),
+            forgetting_queues: Arc::new(RwLock::new(HashMap::default())),
+            stack_level_scroll_state: ScrollbarState::default(),
+            time_scroll_state: ScrollbarState::default(),
+            viewport_time_bound: (None, Duration::from_secs(10)),
         }
     }
 
     fn num_threads(&self) -> usize {
-        self.forgetting_queue
-            .read()
-            .unwrap()
-            .unfinished_events
-            .len()
+        self.forgetting_queues.read().unwrap().len()
     }
 
     pub fn next_tab(&mut self) {

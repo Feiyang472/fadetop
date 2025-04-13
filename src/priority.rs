@@ -52,48 +52,56 @@ pub struct UnfinishedRecord {
 
 #[derive(Clone, Debug)]
 pub struct ForgettingQueue {
+    pub unfinished_events: Vec<UnfinishedRecord>,
     pub finished_events: BinaryHeap<FinishedRecord>,
     pub start_ts: Instant,
-    pub unfinished_events: HashMap<Tid, Vec<UnfinishedRecord>>,
+    pub last_update: Instant,
 }
 
-impl ForgettingQueue {
-    pub fn new() -> ForgettingQueue {
+impl Default for ForgettingQueue {
+    fn default() -> Self {
         ForgettingQueue {
             finished_events: BinaryHeap::new(),
+            unfinished_events: vec![],
             start_ts: Instant::now(),
-            unfinished_events: HashMap::new(),
+            last_update: Instant::now(),
         }
     }
+}
 
-    fn event(
-        &self,
-        trace: &StackTrace,
-        frame: &FrameKey,
-        start: Instant,
-        end: Instant,
-        depth: usize,
-    ) -> FinishedRecord {
-        FinishedRecord {
-            frame_key: FrameKey {
-                tid: trace.thread_id as Tid,
-                pid: trace.pid,
-                name: frame.name.clone(),
-                filename: frame.filename.clone(),
-            },
-            start,
-            end,
-            depth,
-        }
+fn event(
+    trace: &StackTrace,
+    frame: &FrameKey,
+    start: Instant,
+    end: Instant,
+    depth: usize,
+) -> FinishedRecord {
+    FinishedRecord {
+        frame_key: FrameKey {
+            tid: trace.thread_id as Tid,
+            pid: trace.pid,
+            name: frame.name.clone(),
+            filename: frame.filename.clone(),
+        },
+        start,
+        end,
+        depth,
     }
+}
 
-    pub fn increment(&mut self, trace: &StackTrace) {
+pub type ForgettingQueueMap = HashMap<Tid, ForgettingQueue>;
+
+pub trait ForgettingQueueMapOps {
+    fn increment(&mut self, trace: &StackTrace);
+}
+
+impl ForgettingQueueMapOps for ForgettingQueueMap {
+    fn increment(&mut self, trace: &StackTrace) {
         let now = Instant::now();
 
-        let mut prev_frames = self
-            .unfinished_events
-            .remove(&(trace.thread_id as Tid))
-            .unwrap_or_default();
+        let mut queue = self.remove(&(trace.thread_id as Tid)).unwrap_or_default();
+
+        let mut prev_frames = queue.unfinished_events;
 
         let new_idx = prev_frames
             .iter()
@@ -103,7 +111,7 @@ impl ForgettingQueue {
 
         for depth in (new_idx..prev_frames.len()).rev() {
             let unfinished = prev_frames.pop().unwrap();
-            self.finished_events.push(self.event(
+            queue.finished_events.push(event(
                 trace,
                 &unfinished.frame_key,
                 unfinished.start,
@@ -128,17 +136,23 @@ impl ForgettingQueue {
         }
 
         // Save this stack trace for the next iteration.
-        self.unfinished_events
-            .insert(trace.thread_id as Tid, prev_frames);
+        queue.unfinished_events = prev_frames;
+        queue.last_update = now;
+
+        self.insert(trace.thread_id as Tid, queue);
     }
 }
 
 pub trait SamplerOps: Send + 'static {
-    fn push_to_queue(self, forgetting_queue: Arc<RwLock<ForgettingQueue>>) -> Result<(), Error>;
+    fn push_to_queue(self, forgetting_queues: Arc<RwLock<ForgettingQueueMap>>)
+    -> Result<(), Error>;
 }
 
 impl SamplerOps for sampler::Sampler {
-    fn push_to_queue(self, forgetting_queue: Arc<RwLock<ForgettingQueue>>) -> Result<(), Error> {
+    fn push_to_queue(
+        self,
+        forgetting_queues: Arc<RwLock<ForgettingQueueMap>>,
+    ) -> Result<(), Error> {
         for mut sample in self {
             for trace in sample.traces.iter_mut() {
                 let threadid = trace.format_threadid();
@@ -168,7 +182,7 @@ impl SamplerOps for sampler::Sampler {
                     }
                 }
 
-                forgetting_queue.write().unwrap().increment(trace);
+                forgetting_queues.write().unwrap().increment(trace);
             }
         }
 
@@ -183,7 +197,7 @@ mod tests {
 
     #[test]
     fn test_inserting_frames() {
-        let mut queue = ForgettingQueue::new();
+        let mut queues = HashMap::<Tid, ForgettingQueue>::default();
         let frame_template = Frame {
             name: "level0".to_string(),
             filename: "test.py".to_string(),
@@ -211,15 +225,15 @@ mod tests {
             process_info: None,
         };
 
-        queue.increment(&trace);
-        assert_eq!(queue.unfinished_events[&1].len(), 2);
-        assert_eq!(queue.finished_events.len(), 0);
+        queues.increment(&trace);
+        assert_eq!(queues[&1].unfinished_events.len(), 2);
+        assert_eq!(queues[&1].finished_events.len(), 0);
 
-        queue.increment(&trace);
-        assert_eq!(queue.unfinished_events[&1].len(), 2);
-        assert_eq!(queue.finished_events.len(), 0);
+        queues.increment(&trace);
+        assert_eq!(queues[&1].unfinished_events.len(), 2);
+        assert_eq!(queues[&1].finished_events.len(), 0);
 
-        queue.increment(&StackTrace {
+        queues.increment(&StackTrace {
             frames: vec![
                 Frame {
                     name: "level3".to_string(),
@@ -238,14 +252,15 @@ mod tests {
             ..trace.clone()
         });
         assert_eq!(
-            queue.unfinished_events[&1]
+            queues[&1]
+                .unfinished_events
                 .iter()
                 .map(|event| event.frame_key.name.clone())
                 .collect::<Vec<String>>(),
             vec!["level0", "level1_different", "level2", "level3"]
         );
         assert_eq!(
-            queue
+            queues[&1]
                 .finished_events
                 .iter()
                 .map(|event| event.frame_key.name.clone())
@@ -253,7 +268,7 @@ mod tests {
             vec!["level1",]
         );
 
-        queue.increment(&StackTrace {
+        queues.increment(&StackTrace {
             frames: vec![
                 Frame {
                     name: "level2_different".to_string(),
@@ -268,14 +283,15 @@ mod tests {
             ..trace.clone()
         });
         assert_eq!(
-            queue.unfinished_events[&1]
+            queues[&1]
+                .unfinished_events
                 .iter()
                 .map(|event| event.frame_key.name.clone())
                 .collect::<Vec<String>>(),
             vec!["level0", "level1_different", "level2_different"]
         );
         assert_eq!(
-            queue
+            queues[&1]
                 .finished_events
                 .iter()
                 .map(|event| event.frame_key.name.clone())
@@ -283,7 +299,7 @@ mod tests {
             vec!["level1", "level3", "level2"]
         );
 
-        queue.increment(&StackTrace {
+        queues.increment(&StackTrace {
             frames: vec![Frame {
                 name: "level2_different".to_string(),
                 ..frame_template.clone()
@@ -292,8 +308,8 @@ mod tests {
             ..trace.clone()
         });
 
-        assert_eq!(queue.finished_events.len(), 3);
-        assert_eq!(queue.unfinished_events[&1].len(), 3);
-        assert_eq!(queue.unfinished_events[&2].len(), 1);
+        assert_eq!(queues[&1].finished_events.len(), 3);
+        assert_eq!(queues[&1].unfinished_events.len(), 3);
+        assert_eq!(queues[&2].unfinished_events.len(), 1);
     }
 }

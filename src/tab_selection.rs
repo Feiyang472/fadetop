@@ -2,7 +2,7 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::Color,
-    widgets::{Block, StatefulWidget, Tabs, Widget},
+    widgets::{Block, Borders, StatefulWidget, Tabs, Widget},
 };
 
 use crate::state::AppState;
@@ -16,14 +16,13 @@ impl StatefulWidget for TabSelectionWidget {
 
         Tabs::new(
             state
-                .forgetting_queue
+                .forgetting_queues
                 .read()
                 .unwrap()
-                .unfinished_events
                 .keys()
                 .map(|tid| format!("{:#x}", tid)),
         )
-        .block(Block::bordered().title("Threads"))
+        .block(Block::new().borders(Borders::TOP).title("Threads"))
         .highlight_style(highlight_style)
         .select(state.selected_tab)
         .padding("[", "]")
