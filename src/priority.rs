@@ -2,7 +2,7 @@ use anyhow::Error;
 use py_spy::sampler;
 use py_spy::stack_trace::Frame;
 use py_spy::stack_trace::StackTrace;
-use remoteprocess::Tid;
+use remoteprocess::{Pid, Tid};
 use std::cmp::min;
 use std::collections::BinaryHeap;
 use std::collections::HashMap;
@@ -14,7 +14,7 @@ use std::time::Instant;
 pub struct FrameKey {
     pub filename: String,
     pub name: String,
-    pub pid: i32,
+    pub pid: Pid,
     pub tid: Tid,
 }
 

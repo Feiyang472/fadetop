@@ -18,7 +18,7 @@ impl StatefulWidget for TimelineWidget {
         let block = Block::default().title("Timeline").borders(Borders::TOP);
         block.clone().render(area, buf);
 
-        if let Some((tid, queue)) = state
+        if let Some((_tid, queue)) = state
             .forgetting_queues
             .write()
             .unwrap()
@@ -54,6 +54,9 @@ impl StatefulWidget for TimelineWidget {
                 if record.end < visible_start {
                     return;
                 }
+                if record.depth >= inner.height as usize {
+                    return;
+                }
                 render_event(
                     buf,
                     inner,
@@ -67,7 +70,12 @@ impl StatefulWidget for TimelineWidget {
                 );
             });
 
-            for (depth, record) in queue.unfinished_events.iter().enumerate() {
+            for (depth, record) in queue
+                .unfinished_events
+                .iter()
+                .take(inner.height as usize)
+                .enumerate()
+            {
                 render_event(
                     buf,
                     inner,
