@@ -9,13 +9,13 @@ use remoteprocess::Pid;
 struct Args {
     pid: Pid,
 
-    #[clap(default_value = "100")]
+    #[clap(long, default_value = "100")]
     rate: u64,
 
-    #[clap(default_value = "false")]
+    #[clap(long, default_value = "false")]
     subprocesses: bool,
 
-    #[clap(default_value = "false")]
+    #[clap(long, default_value = "false")]
     native: bool,
 }
 
