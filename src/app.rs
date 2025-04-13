@@ -3,19 +3,28 @@ use crate::{
     timeline::TimelineWidget,
 };
 use anyhow::Error;
+use py_spy::Config;
 use ratatui::{
     DefaultTerminal, crossterm,
     layout::{Constraint, Direction, Layout},
     prelude::Frame,
 };
+use remoteprocess::Pid;
 use std::{
     sync::{Arc, mpsc},
     thread,
 };
 
-pub trait SamplerFactory: Default + Clone + Send + Sync {
+pub trait SamplerFactory: Clone + Send + Sync {
     type Sampler: SamplerOps;
     fn create_sampler(&self) -> Result<Self::Sampler, Error>;
+}
+
+impl SamplerFactory for (Pid, Config) {
+    type Sampler = py_spy::sampler::Sampler;
+    fn create_sampler(&self) -> Result<Self::Sampler, Error> {
+        Self::Sampler::new(self.0, &self.1)
+    }
 }
 
 #[derive(Debug)]
@@ -68,11 +77,11 @@ where
         Ok(())
     }
 
-    pub fn new() -> Self {
+    pub fn new(sampler_creater: F) -> Self {
         Self {
             running: false,
             tab_selection_state: AppState::new(),
-            sampler_creater: F::default(),
+            sampler_creater,
         }
     }
 
