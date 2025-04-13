@@ -46,7 +46,7 @@ where
 
         // Existing sampler event sender
         let sampler = self.sampler_creater.create_sampler()?;
-        let queue = Arc::clone(&self.tab_selection_state.forgetting_queue);
+        let queue = Arc::clone(&self.tab_selection_state.forgetting_queues);
         thread::spawn({
             move || {
                 sampler.push_to_queue(queue).unwrap();
@@ -56,7 +56,7 @@ where
         // New async event sender
         let async_sender = sender.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(40));
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(10));
             loop {
                 interval.tick().await;
                 if async_sender.send(UpdateEvent::Periodic).is_err() {
