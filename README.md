@@ -1,6 +1,7 @@
 # FadeTop
 
 FadeTop is a real-time visualizer for Python stack samples in the terminal.
+
 ![](https://github.com/Feiyang472/fadetop/actions/workflows/build.yml/badge.svg)
 ![](https://github.com/Feiyang472/fadetop/actions/workflows/rust.yml/badge.svg)
 ![Demo](.github/term.gif)
