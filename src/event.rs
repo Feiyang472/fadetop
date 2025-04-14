@@ -1,12 +1,16 @@
 use anyhow::Error;
 use ratatui::crossterm;
 
-use crate::app::{FadeTopApp, SamplerFactory};
+use crate::{
+    app::{FadeTopApp, SamplerFactory},
+    errors::AppError,
+};
 
 use crossterm::event::{Event, KeyCode, KeyEventKind};
 pub enum UpdateEvent {
     Periodic,
     Input(crossterm::event::Event),
+    Error(AppError),
 }
 
 impl UpdateEvent {
@@ -17,6 +21,7 @@ impl UpdateEvent {
         match self {
             UpdateEvent::Input(term_event) => UpdateEvent::handle_crossterm_events(term_event, app),
             UpdateEvent::Periodic => Ok(()),
+            UpdateEvent::Error(err) => Err(err.into()),
         }
     }
 
@@ -26,15 +31,12 @@ impl UpdateEvent {
     {
         match term_event {
             Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
-                KeyCode::Right => app.tab_selection_state.next_tab(),
-                KeyCode::Left => app.tab_selection_state.prev_tab(),
-                KeyCode::Esc => app.quit(),
-                _ => {}
+                KeyCode::Right => app.app_state.next_tab(),
+                KeyCode::Left => app.app_state.prev_tab(),
+                KeyCode::Esc => Ok(app.app_state.quit()),
+                _ => Ok(()),
             },
-            Event::Mouse(_) => {}
-            Event::Resize(_, _) => {}
-            _ => {}
+            _ => Ok(()),
         }
-        Ok(())
     }
 }

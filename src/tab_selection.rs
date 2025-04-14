@@ -14,19 +14,23 @@ impl StatefulWidget for TabSelectionWidget {
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         let highlight_style = (Color::default(), Color::Blue);
 
-        Tabs::new(
-            state
-                .forgetting_queues
-                .read()
-                .unwrap()
-                .keys()
-                .map(|tid| format!("{:#x}", tid)),
-        )
-        .block(Block::new().borders(Borders::TOP).title("Threads"))
-        .highlight_style(highlight_style)
-        .select(state.selected_tab)
-        .padding("[", "]")
-        .divider(", ")
-        .render(area, buf);
+        let mut quit = false;
+
+        match state.forgetting_queues.read() {
+            Ok(queues) => Tabs::new(queues.keys().map(|tid| format!("{:#x}", tid)))
+                .block(Block::new().borders(Borders::TOP).title("Threads"))
+                .highlight_style(highlight_style)
+                .select(state.selected_tab)
+                .padding("[", "]")
+                .divider(", ")
+                .render(area, buf),
+            Err(_err) => {
+                quit = true;
+            }
+        };
+
+        if quit {
+            state.quit();
+        }
     }
 }

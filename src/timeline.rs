@@ -18,76 +18,74 @@ impl StatefulWidget for TimelineWidget {
         let block = Block::default().title("Timeline").borders(Borders::TOP);
         block.clone().render(area, buf);
 
-        if let Some((_tid, queue)) = state
-            .forgetting_queues
-            .write()
-            .unwrap()
-            .iter()
-            .nth(state.selected_tab)
-        {
-            // Render finished events
+        if let Ok(queues) = state.forgetting_queues.write() {
+            if let Some((_tid, queue)) = queues.iter().nth(state.selected_tab) {
+                // Render finished events
 
-            let total_duration = queue.last_update - queue.start_ts;
+                let total_duration = queue.last_update - queue.start_ts;
 
-            let (visible_end, window_width) = (
-                state.viewport_time_bound.0.unwrap_or(queue.last_update),
-                state.viewport_time_bound.1.min(total_duration),
-            );
-
-            let visible_start = visible_end - window_width;
-
-            state.time_scroll_state = state
-                .time_scroll_state
-                // for some reason content length has to be the length of the content not in the current viewport
-                .content_length((total_duration - window_width).as_micros() as usize)
-                .position((visible_start - queue.start_ts).as_micros() as usize)
-                .viewport_content_length(window_width.as_micros() as usize);
-
-            self.render_scrollbar(area, buf, &mut state.time_scroll_state);
-
-            let inner = block.inner(area);
-            let width = inner.width as usize;
-            queue.finished_events.iter().for_each(|record| {
-                if record.start > visible_end {
-                    return;
-                }
-                if record.end < visible_start {
-                    return;
-                }
-                if record.depth >= inner.height as usize {
-                    return;
-                }
-                render_event(
-                    buf,
-                    inner,
-                    (record.start - visible_start).as_micros() as usize,
-                    (record.end - visible_start).as_micros() as usize,
-                    record.depth as u16,
-                    &record.frame_key.name,
-                    window_width.as_micros() as usize,
-                    width,
-                    Color::Blue,
+                let (visible_end, window_width) = (
+                    state.viewport_time_bound.0.unwrap_or(queue.last_update),
+                    state.viewport_time_bound.1.min(total_duration),
                 );
-            });
 
-            for (depth, record) in queue
-                .unfinished_events
-                .iter()
-                .take(inner.height as usize)
-                .enumerate()
-            {
-                render_event(
-                    buf,
-                    inner,
-                    (record.start - visible_start).as_micros() as usize,
-                    window_width.as_micros() as usize, // Use window_width.as_micros() as usize as the "end" for unfinished events
-                    depth as u16,
-                    &record.frame_key.name,
-                    window_width.as_micros() as usize,
-                    width,
-                    Color::Red,
-                );
+                let visible_start = visible_end - window_width;
+
+                state.time_scroll_state = state
+                    .time_scroll_state
+                    // for some reason content length has to be the length of the content not in the current viewport
+                    .content_length((total_duration - window_width).as_micros() as usize)
+                    .position((visible_start - queue.start_ts).as_micros() as usize)
+                    .viewport_content_length(window_width.as_micros() as usize);
+
+                self.render_scrollbar(area, buf, &mut state.time_scroll_state);
+
+                let inner = block.inner(area);
+                let width = inner.width as usize;
+                queue.finished_events.iter().for_each(|record| {
+                    if record.start > visible_end {
+                        return;
+                    }
+                    if record.end < visible_start {
+                        return;
+                    }
+                    if record.depth >= inner.height as usize {
+                        return;
+                    }
+                    render_event(
+                        buf,
+                        inner,
+                        (record.start - visible_start).as_micros() as usize,
+                        (record.end - visible_start).as_micros() as usize,
+                        record.depth as u16,
+                        &record.frame_key.name,
+                        window_width.as_micros() as usize,
+                        width,
+                        Color::Blue,
+                    );
+                });
+
+                for (depth, record) in queue
+                    .unfinished_events
+                    .iter()
+                    .take(inner.height as usize)
+                    .enumerate()
+                {
+                    render_event(
+                        buf,
+                        inner,
+                        (record.start - visible_start).as_micros() as usize,
+                        window_width.as_micros() as usize, // Use window_width.as_micros() as usize as the "end" for unfinished events
+                        depth as u16,
+                        &record.frame_key.name,
+                        window_width.as_micros() as usize,
+                        width,
+                        Color::Red,
+                    );
+                }
             }
+        } else {
+            state.quit();
         }
     }
 }

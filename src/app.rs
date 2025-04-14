@@ -29,8 +29,7 @@ impl SamplerFactory for (Pid, Config) {
 
 #[derive(Debug)]
 pub struct FadeTopApp<F: SamplerFactory> {
-    running: bool,
-    pub tab_selection_state: AppState,
+    pub app_state: AppState,
     sampler_creater: F,
 }
 
@@ -55,7 +54,7 @@ where
 
         // Existing sampler event sender
         let sampler = self.sampler_creater.create_sampler()?;
-        let queue = Arc::clone(&self.tab_selection_state.forgetting_queues);
+        let queue = Arc::clone(&self.app_state.forgetting_queues);
         thread::spawn({
             move || {
                 sampler.push_to_queue(queue).unwrap();
@@ -79,8 +78,7 @@ where
 
     pub fn new(sampler_creater: F) -> Self {
         Self {
-            running: false,
-            tab_selection_state: AppState::new(),
+            app_state: AppState::new(),
             sampler_creater,
         }
     }
@@ -93,14 +91,12 @@ where
         frame.render_stateful_widget(
             TabSelectionWidget {},
             tab_selector,
-            &mut self.tab_selection_state,
+            &mut self.app_state,
         );
-        frame.render_stateful_widget(TimelineWidget {}, tab, &mut self.tab_selection_state);
+        frame.render_stateful_widget(TimelineWidget {}, tab, &mut self.app_state);
     }
 
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<(), Error> {
-        self.running = true;
-
         // Initialize a Tokio runtime
         let runtime = tokio::runtime::Runtime::new()?;
         let (event_tx, event_rx) = mpsc::channel::<UpdateEvent>();
@@ -111,14 +107,10 @@ where
             Ok::<(), Error>(())
         })?;
 
-        while self.running {
+        while self.app_state.is_running() {
             terminal.draw(|frame| self.render_full_app(frame))?;
-            event_rx.recv().unwrap().update_state(&mut self).unwrap();
+            event_rx.recv()?.update_state(&mut self)?;
         }
         Ok(())
-    }
-
-    pub fn quit(&mut self) {
-        self.running = false;
     }
 }

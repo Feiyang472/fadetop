@@ -110,7 +110,7 @@ impl ForgettingQueueMapOps for ForgettingQueueMap {
             .unwrap_or(min(prev_frames.len(), trace.frames.len()));
 
         for depth in (new_idx..prev_frames.len()).rev() {
-            let unfinished = prev_frames.pop().unwrap();
+            let unfinished = prev_frames.pop().unwrap(); // safe
             queue.finished_events.push(event(
                 trace,
                 &unfinished.frame_key,
@@ -182,7 +182,10 @@ impl SamplerOps for sampler::Sampler {
                     }
                 }
 
-                forgetting_queues.write().unwrap().increment(trace);
+                forgetting_queues
+                    .write()
+                    .map_err(|_| std::sync::PoisonError::new(threadid))?
+                    .increment(trace);
             }
         }
 
