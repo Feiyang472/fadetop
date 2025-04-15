@@ -43,6 +43,7 @@ jobs:
       - name: Build Wheel
         run: |
           rustup toolchain uninstall stable && rustup toolchain install stable
+          rustup target add ${{ matrix.platform.target }}
           python3 -m pip install --upgrade maturin
           maturin build --release -o dist --target ${{ matrix.platform.target }}
       - name: Upload wheels
