@@ -40,9 +40,7 @@ jobs:
           before-script-linux: |
             apt-get update
             apt-get install -y libunwind-dev libunwind8
-            if [ "${{ matrix.platform.target }}" = "ppc64le" ]; then
-              apt-get install -y libunwind-dev:ppc64el libunwind8:ppc64el
-            elif [ "${{ matrix.platform.target }}" = "x86" ]; then
+            if [ "${{ matrix.platform.target }}" = "x86" ]; then
               apt-get install -y libunwind-dev:i386 libunwind8:i386
             elif [ "${{ matrix.platform.target }}" = "aarch64" ]; then
               apt-get install -y libunwind-dev:arm64 libunwind8:arm64
