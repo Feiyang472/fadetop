@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::thread;
 
@@ -116,7 +115,7 @@ impl SamplerFactory for MockSampler {
 
 fn main() -> Result<(), Error> {
     let terminal = ratatui::init();
-    let app = FadeTopApp::<MockSampler>::new();
+    let app = FadeTopApp::new(MockSampler {});
 
     let result = app.run(terminal);
     ratatui::restore();

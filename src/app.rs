@@ -88,11 +88,7 @@ where
             .direction(Direction::Vertical)
             .constraints(vec![Constraint::Length(3), Constraint::Fill(50)])
             .areas(frame.area());
-        frame.render_stateful_widget(
-            TabSelectionWidget {},
-            tab_selector,
-            &mut self.app_state,
-        );
+        frame.render_stateful_widget(TabSelectionWidget {}, tab_selector, &mut self.app_state);
         frame.render_stateful_widget(TimelineWidget {}, tab, &mut self.app_state);
     }
 

@@ -1,10 +1,9 @@
 use ratatui::{
     buffer::Buffer,
-    layout::{Margin, Rect},
+    layout::Rect,
     style::{Color, Style},
-    widgets::{
-        Block, Borders, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget, Widget,
-    },
+    text::Line,
+    widgets::{Block, Borders, StatefulWidget, Widget},
 };
 
 use crate::state::AppState;
@@ -15,10 +14,7 @@ impl StatefulWidget for TimelineWidget {
     type State = AppState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let block = Block::default().title("Timeline").borders(Borders::TOP);
-        block.clone().render(area, buf);
-
-        if let Ok(queues) = state.forgetting_queues.write() {
+        if let Ok(queues) = state.forgetting_queues.read() {
             if let Some((_tid, queue)) = queues.iter().nth(state.selected_tab) {
                 // Render finished events
 
@@ -31,16 +27,30 @@ impl StatefulWidget for TimelineWidget {
 
                 let visible_start = visible_end - window_width;
 
-                state.time_scroll_state = state
-                    .time_scroll_state
-                    // for some reason content length has to be the length of the content not in the current viewport
-                    .content_length((total_duration - window_width).as_micros() as usize)
-                    .position((visible_start - queue.start_ts).as_micros() as usize)
-                    .viewport_content_length(window_width.as_micros() as usize);
-
-                self.render_scrollbar(area, buf, &mut state.time_scroll_state);
-
+                let block = Block::default()
+                    .title(
+                        Line::from(format!(
+                            "-{:}:{:0>2}",
+                            (queue.last_update - visible_start).as_secs() / 60,
+                            (queue.last_update - visible_start).as_secs()
+                        ))
+                        .left_aligned(),
+                    )
+                    .title(
+                        Line::from(match state.viewport_time_bound.0 {
+                            Some(visible_end) => format!(
+                                "-{:}:{:0>2}",
+                                (queue.last_update - visible_end).as_secs() / 60,
+                                (queue.last_update - visible_end).as_secs()
+                            ),
+                            None => "Now".to_string(),
+                        })
+                        .right_aligned(),
+                    )
+                    .borders(Borders::TOP);
                 let inner = block.inner(area);
+                block.render(area, buf);
+
                 let width = inner.width as usize;
                 queue.finished_events.iter().for_each(|record| {
                     if record.start > visible_end {
@@ -87,23 +97,6 @@ impl StatefulWidget for TimelineWidget {
         } else {
             state.quit();
         }
-    }
-}
-
-impl TimelineWidget {
-    pub fn render_scrollbar(&self, area: Rect, buf: &mut Buffer, state: &mut ScrollbarState) {
-        Scrollbar::default()
-            .orientation(ScrollbarOrientation::HorizontalBottom)
-            .begin_symbol(Some("a"))
-            .end_symbol(Some("d"))
-            .render(
-                area.inner(Margin {
-                    vertical: 1,
-                    horizontal: 1,
-                }),
-                buf,
-                state,
-            );
     }
 }
 

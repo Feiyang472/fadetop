@@ -14,7 +14,6 @@ pub struct AppState {
     pub selected_tab: usize,
     pub forgetting_queues: Arc<RwLock<ForgettingQueueMap>>,
     pub stack_level_scroll_state: ScrollbarState,
-    pub time_scroll_state: ScrollbarState,
     pub(crate) viewport_time_bound: (Option<Instant>, Duration),
     running: bool,
 }
@@ -33,7 +32,6 @@ impl AppState {
             selected_tab: 0,
             forgetting_queues: Arc::new(RwLock::new(HashMap::default())),
             stack_level_scroll_state: ScrollbarState::default(),
-            time_scroll_state: ScrollbarState::default(),
             viewport_time_bound: (None, Duration::from_secs(10)),
             running: true,
         }
