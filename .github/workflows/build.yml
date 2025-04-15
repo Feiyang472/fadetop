@@ -28,7 +28,7 @@ jobs:
             target: aarch64
           - runner: ubuntu-22.04
             target: ppc64le
-          - runner: ubuntu-22.04
+          - runner: ubuntu-22.04-arm
             target: armv7
     steps:
       - uses: actions/checkout@v4
@@ -40,9 +40,7 @@ jobs:
           before-script-linux: |
             apt-get update
             apt-get install -y libunwind-dev libunwind8
-            if [ "${{ matrix.platform.target }}" = "armv7" ]; then
-              apt-get install -y libunwind-dev:armhf libunwind8:armhf
-            elif [ "${{ matrix.platform.target }}" = "ppc64le" ]; then
+            if [ "${{ matrix.platform.target }}" = "ppc64le" ]; then
               apt-get install -y libunwind-dev:ppc64el libunwind8:ppc64el
             elif [ "${{ matrix.platform.target }}" = "x86" ]; then
               apt-get install -y libunwind-dev:i386 libunwind8:i386
