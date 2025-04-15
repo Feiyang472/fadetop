@@ -36,10 +36,10 @@ jobs:
           target: ${{ matrix.platform.target }}
           args: --release --out dist
           before-script-linux: |
+          apt-get update
+          if [ "${{ matrix.platform.target }}" = "armv7" ]; then
+            # Add ARM toolchain repository
             dpkg --add-architecture armhf
-            apt-get update
-            if [ "${{ matrix.platform.target }}" = "armv7" ]; then
-              # Add ARM toolchain repository
               echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main universe" >> /etc/apt/sources.list
               apt-get update
               apt-get install -y \
