@@ -38,7 +38,16 @@ jobs:
           before-script-linux: |
             apt-get update
             apt-get install -y libunwind-dev libunwind8
-            if [ "${{ matrix.platform.target }}" = "x86" ]; then
+            if [ "${{ matrix.platform.target }}" = "armv7" ]; then
+              # Add ARM toolchain repository
+              echo "deb [arch=armhf] http://ports.ubuntu.com/ubuntu-ports jammy main universe" >> /etc/apt/sources.list
+              apt-get update
+              apt-get install -y libunwind-dev:armhf libunwind8:armhf
+              # Create symlinks for the linker to find the libraries
+              ln -s /usr/lib/arm-linux-gnueabihf/libunwind.so /usr/armv7-unknown-linux-gnueabihf/lib/
+              ln -s /usr/lib/arm-linux-gnueabihf/libunwind-ptrace.so /usr/armv7-unknown-linux-gnueabihf/lib/
+              ln -s /usr/lib/arm-linux-gnueabihf/libunwind-arm.so /usr/armv7-unknown-linux-gnueabihf/lib/
+            elif [ "${{ matrix.platform.target }}" = "x86" ]; then
               apt-get install -y libunwind-dev:i386 libunwind8:i386
             elif [ "${{ matrix.platform.target }}" = "aarch64" ]; then
               apt-get install -y libunwind-dev:arm64 libunwind8:arm64
