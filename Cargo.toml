@@ -17,8 +17,10 @@ members = [
 
 anyhow = { workspace = true}
 clap = "4.5.36"
+config = { version = "0.15.11", features = ["toml"] }
 py-spy = { workspace = true}
 ratatui = { workspace = true}
 remoteprocess = "0.5.0"
+serde = "1.0.219"
 tokio = {version = "1.44.2", features = ["full"]}
 use = "0.0.1-pre.0"

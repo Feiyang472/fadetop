@@ -5,16 +5,65 @@ use std::{
 };
 
 use anyhow::Error;
-use ratatui::widgets::ScrollbarState;
+use ratatui::prelude::Stylize;
+use ratatui::{
+    text::Line,
+    widgets::{Block, Borders, ScrollbarState},
+};
 
-use crate::priority::ForgettingQueueMap;
+use crate::priority::{ForgettingQueue, ForgettingQueueMap};
+
+#[derive(Debug, Clone, Copy)]
+pub enum ViewPortRight {
+    Latest,
+    Selected(Instant),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ViewPortBounds {
+    pub right: ViewPortRight,
+    pub width: Duration,
+}
+
+impl ViewPortBounds {
+    pub fn render_header(&self, queue: &ForgettingQueue) -> Block {
+        Block::default()
+            .title(
+                Line::from(format!(
+                    "<-{:0>2}:{:0>2}->",
+                    (self.width).as_secs() / 60,
+                    (self.width).as_secs()
+                ))
+                .bold()
+                .centered(),
+            )
+            .title(
+                Line::from(match self.right {
+                    ViewPortRight::Latest => "Now".to_string(),
+                    ViewPortRight::Selected(right) => {
+                        let window_right = (queue.last_update - right).as_secs();
+                        format!("-{:0>2}:{:0>2}", window_right / 60, window_right)
+                    }
+                })
+                .right_aligned(),
+            )
+            .title(
+                Line::from({
+                    let furthest_left = (queue.last_update - queue.start_ts).as_secs();
+                    format!("-{:0>2}:{:0>2}", furthest_left / 60, furthest_left,)
+                })
+                .left_aligned(),
+            )
+            .borders(Borders::TOP)
+    }
+}
 
 #[derive(Debug)]
 pub struct AppState {
     pub selected_tab: usize,
     pub forgetting_queues: Arc<RwLock<ForgettingQueueMap>>,
     pub stack_level_scroll_state: ScrollbarState,
-    pub(crate) viewport_time_bound: (Option<Instant>, Duration),
+    pub(crate) viewport_bound: ViewPortBounds,
     running: bool,
 }
 
@@ -32,7 +81,10 @@ impl AppState {
             selected_tab: 0,
             forgetting_queues: Arc::new(RwLock::new(HashMap::default())),
             stack_level_scroll_state: ScrollbarState::default(),
-            viewport_time_bound: (None, Duration::from_secs(10)),
+            viewport_bound: ViewPortBounds {
+                right: ViewPortRight::Latest,
+                width: Duration::from_secs(10),
+            },
             running: true,
         }
     }

@@ -2,11 +2,10 @@ use ratatui::{
     buffer::Buffer,
     layout::Rect,
     style::{Color, Style},
-    text::Line,
-    widgets::{Block, Borders, StatefulWidget, Widget},
+    widgets::{StatefulWidget, Widget},
 };
 
-use crate::state::AppState;
+use crate::state::{AppState, ViewPortRight};
 
 pub struct TimelineWidget {}
 
@@ -17,35 +16,15 @@ impl StatefulWidget for TimelineWidget {
         if let Ok(queues) = state.forgetting_queues.read() {
             if let Some((_tid, queue)) = queues.iter().nth(state.selected_tab) {
                 let total_duration = queue.last_update - queue.start_ts;
-                let (visible_end, window_width) = (
-                    state.viewport_time_bound.0.unwrap_or(queue.last_update),
-                    state.viewport_time_bound.1.min(total_duration),
-                );
+                let visible_end = match state.viewport_bound.right {
+                    ViewPortRight::Selected(end) => end,
+                    ViewPortRight::Latest => queue.last_update,
+                };
+
+                let window_width = state.viewport_bound.width;
                 let visible_start = visible_end - window_width;
 
-                let block = Block::default()
-                    .title(
-                        Line::from(format!(
-                            "-{:0>2}:{:0>2}",
-                            (queue.last_update - visible_start).as_secs() / 60,
-                            (queue.last_update - visible_start).as_secs()
-                        ))
-                        .left_aligned(),
-                    )
-                    .title(
-                        Line::from(state.viewport_time_bound.0.map_or(
-                            "Now".to_string(),
-                            |visible_end| {
-                                format!(
-                                    "-{:}:{:0>2}",
-                                    (queue.last_update - visible_end).as_secs() / 60,
-                                    (queue.last_update - visible_end).as_secs()
-                                )
-                            },
-                        ))
-                        .right_aligned(),
-                    )
-                    .borders(Borders::TOP);
+                let block = state.viewport_bound.render_header(&queue);
 
                 let inner = block.inner(area);
                 block.render(area, buf);
@@ -104,16 +83,16 @@ fn render_event(
     end: usize,
     depth: u16,
     name: &str,
-    total_duration: usize,
+    window_width: usize,
     width: usize,
     color: Color,
 ) {
-    if total_duration == 0 {
+    if window_width == 0 {
         return;
     }
     // Calculate relative positions
-    let relative_start = (start * width) / total_duration;
-    let relative_end = (end * width) / total_duration;
+    let relative_start = (start * width) / window_width;
+    let relative_end = (end * width) / window_width;
 
     // Ensure the range is within bounds
     let x_start = inner.left() + relative_start as u16;
