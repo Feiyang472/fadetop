@@ -130,10 +130,10 @@ pub struct ForgettingQueueMap {
 }
 
 impl ForgettingQueueMap {
-    pub fn keys(&self) -> Keys<'_, i32, ForgettingQueue> {
+    pub fn keys(&self) -> Keys<'_, Tid, ForgettingQueue> {
         self.map.keys()
     }
-    pub fn iter(&self) -> Iter<'_, i32, ForgettingQueue> {
+    pub fn iter(&self) -> Iter<'_, Tid, ForgettingQueue> {
         self.map.iter()
     }
     pub fn len(&self) -> usize {
