@@ -1,5 +1,8 @@
 use crate::{
-    event::UpdateEvent, priority::SamplerOps, state::AppState, tab_selection::TabSelectionWidget,
+    event::UpdateEvent,
+    priority::{ForgetRules, SamplerOps},
+    state::AppState,
+    tab_selection::TabSelectionWidget,
     timeline::TimelineWidget,
 };
 use anyhow::Error;
@@ -13,6 +16,7 @@ use remoteprocess::Pid;
 use std::{
     sync::{Arc, mpsc},
     thread,
+    time::Duration,
 };
 
 pub trait SamplerFactory: Clone + Send + Sync {
@@ -43,6 +47,22 @@ impl<F> FadeTopApp<F>
 where
     F: SamplerFactory,
 {
+    pub fn new(sampler_creater: F) -> Self {
+        Self {
+            app_state: AppState::new(),
+            sampler_creater,
+        }
+    }
+
+    pub fn with_rules(self, rules: Vec<ForgetRules>) -> Result<Self, Error> {
+        self.app_state
+            .forgetting_queues
+            .write()
+            .map_err(|_| std::sync::PoisonError::new(()))?
+            .with_rules(rules);
+        Ok(self)
+    }
+
     fn run_event_senders(&self, sender: mpsc::Sender<UpdateEvent>) -> Result<(), Error> {
         // Existing terminal event sender
         thread::spawn({
@@ -76,17 +96,10 @@ where
         Ok(())
     }
 
-    pub fn new(sampler_creater: F) -> Self {
-        Self {
-            app_state: AppState::new(),
-            sampler_creater,
-        }
-    }
-
     fn render_full_app(&mut self, frame: &mut Frame) {
         let [tab_selector, tab] = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Length(3), Constraint::Fill(50)])
+            .constraints(vec![Constraint::Max(2), Constraint::Fill(50)])
             .areas(frame.area());
         frame.render_stateful_widget(TabSelectionWidget {}, tab_selector, &mut self.app_state);
         frame.render_stateful_widget(TimelineWidget {}, tab, &mut self.app_state);
@@ -108,5 +121,10 @@ where
             event_rx.recv()?.update_state(&mut self)?;
         }
         Ok(())
+    }
+
+    pub fn with_viewport_window(mut self, width: Duration) -> Self {
+        self.app_state.viewport_bound.width = width;
+        self
     }
 }

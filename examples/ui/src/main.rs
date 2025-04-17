@@ -1,9 +1,9 @@
 use std::sync::{Arc, RwLock};
 use std::thread;
+use std::time::Duration;
 
 use anyhow::Error;
-use fadetop::priority::ForgettingQueueMap;
-use fadetop::priority::ForgettingQueueMapOps;
+use fadetop::priority::{ForgetRules, ForgettingQueueMap};
 use fadetop::{
     app::{FadeTopApp, SamplerFactory},
     priority::SamplerOps,
@@ -115,7 +115,12 @@ impl SamplerFactory for MockSampler {
 
 fn main() -> Result<(), Error> {
     let terminal = ratatui::init();
-    let app = FadeTopApp::new(MockSampler {});
+    let app = FadeTopApp::new(MockSampler {})
+        .with_rules(vec![ForgetRules::RectLinear {
+            at_least: Duration::from_secs(10),
+            ratio: 0.0,
+        }])
+        .unwrap();
 
     let result = app.run(terminal);
     ratatui::restore();

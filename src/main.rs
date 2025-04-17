@@ -1,38 +1,50 @@
+use std::time::Duration;
+
 use anyhow::Error;
 use clap::{Parser, command};
 use fadetop::app::FadeTopApp;
-use py_spy::{Config, config::LockingStrategy};
+use py_spy;
 use remoteprocess::Pid;
+use serde::Deserialize;
 
 #[derive(Parser, Debug)]
 #[command(version)]
 struct Args {
     pid: Pid,
+}
 
-    #[clap(long, default_value = "100")]
-    rate: u64,
-
-    #[clap(long, default_value = "false")]
+#[derive(Deserialize)]
+struct AppConfig {
+    sampling_rate: u64,
+    window_width_seconds: u64,
     subprocesses: bool,
-
-    #[clap(long, default_value = "false")]
     native: bool,
 }
 
 fn main() -> Result<(), Error> {
     let args = Args::try_parse()?;
+    let configs = config::Config::builder()
+        .set_default("sampling_rate", "100")?
+        .set_default("window_width_seconds", "100")?
+        .set_default("subprocesses", "true")?
+        .set_default("native", "true")?
+        .add_source(config::File::with_name("fadetop_config.toml").required(false))
+        .add_source(config::Environment::with_prefix("FADETOP"))
+        .build()?
+        .try_deserialize::<AppConfig>()?;
 
     let terminal = ratatui::init();
     let app = FadeTopApp::new((
         args.pid,
-        Config {
-            blocking: LockingStrategy::NonBlocking,
-            sampling_rate: args.rate,
-            subprocesses: args.subprocesses,
-            native: args.native,
+        py_spy::Config {
+            blocking: py_spy::config::LockingStrategy::NonBlocking,
+            sampling_rate: configs.sampling_rate,
+            subprocesses: configs.subprocesses,
+            native: configs.native,
             ..Default::default()
         },
-    ));
+    ))
+    .with_viewport_window(Duration::from_secs(configs.window_width_seconds));
 
     let result = app.run(terminal);
     ratatui::restore();

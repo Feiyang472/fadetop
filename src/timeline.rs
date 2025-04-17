@@ -15,7 +15,11 @@ impl StatefulWidget for TimelineWidget {
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         if let Ok(queues) = state.forgetting_queues.read() {
             if let Some((_tid, queue)) = queues.iter().nth(state.selected_tab) {
-                let total_duration = queue.last_update - queue.start_ts;
+                if let ViewPortRight::Selected(end) = state.viewport_bound.right {
+                    if end > queue.last_update {
+                        state.viewport_bound.right = ViewPortRight::Latest;
+                    }
+                }
                 let visible_end = match state.viewport_bound.right {
                     ViewPortRight::Selected(end) => end,
                     ViewPortRight::Latest => queue.last_update,

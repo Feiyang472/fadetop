@@ -1,5 +1,4 @@
 use std::{
-    collections::HashMap,
     sync::{Arc, RwLock},
     time::{Duration, Instant},
 };
@@ -25,14 +24,53 @@ pub(crate) struct ViewPortBounds {
     pub width: Duration,
 }
 
+impl Default for ViewPortBounds {
+    fn default() -> Self {
+        Self {
+            right: ViewPortRight::Latest,
+            width: Duration::from_secs(60),
+        }
+    }
+}
+
 impl ViewPortBounds {
+    pub fn zoom_in(&mut self) {
+        self.width = self.width.mul_f32(1.5);
+    }
+
+    pub fn zoom_out(&mut self) {
+        self.width = self.width.div_f32(1.5);
+    }
+
+    pub fn move_left(&mut self) {
+        match self.right {
+            ViewPortRight::Latest => {
+                self.right = ViewPortRight::Selected(Instant::now() - self.width / 2);
+            }
+            ViewPortRight::Selected(right) => {
+                self.right = ViewPortRight::Selected(right - self.width / 2);
+            }
+        }
+    }
+
+    pub fn move_right(&mut self) {
+        match self.right {
+            ViewPortRight::Latest => {
+                self.right = ViewPortRight::Selected(Instant::now() + self.width / 2);
+            }
+            ViewPortRight::Selected(right) => {
+                self.right = ViewPortRight::Selected(right + self.width / 2);
+            }
+        }
+    }
+
     pub fn render_header(&self, queue: &ForgettingQueue) -> Block {
         Block::default()
             .title(
                 Line::from(format!(
                     "<-{:0>2}:{:0>2}->",
                     (self.width).as_secs() / 60,
-                    (self.width).as_secs()
+                    (self.width).as_secs() % 60
                 ))
                 .bold()
                 .centered(),
@@ -42,7 +80,7 @@ impl ViewPortBounds {
                     ViewPortRight::Latest => "Now".to_string(),
                     ViewPortRight::Selected(right) => {
                         let window_right = (queue.last_update - right).as_secs();
-                        format!("-{:0>2}:{:0>2}", window_right / 60, window_right)
+                        format!("-{:0>2}:{:0>2}", window_right / 60, window_right % 60)
                     }
                 })
                 .right_aligned(),
@@ -50,7 +88,7 @@ impl ViewPortBounds {
             .title(
                 Line::from({
                     let furthest_left = (queue.last_update - queue.start_ts).as_secs();
-                    format!("-{:0>2}:{:0>2}", furthest_left / 60, furthest_left,)
+                    format!("-{:0>2}:{:0>2}", furthest_left / 60, furthest_left % 60)
                 })
                 .left_aligned(),
             )
@@ -79,12 +117,9 @@ impl AppState {
     pub fn new() -> Self {
         Self {
             selected_tab: 0,
-            forgetting_queues: Arc::new(RwLock::new(HashMap::default())),
+            forgetting_queues: Arc::default(),
             stack_level_scroll_state: ScrollbarState::default(),
-            viewport_bound: ViewPortBounds {
-                right: ViewPortRight::Latest,
-                width: Duration::from_secs(10),
-            },
+            viewport_bound: ViewPortBounds::default(),
             running: true,
         }
     }
