@@ -3,7 +3,7 @@ use crate::{
     priority::{ForgetRules, SamplerOps},
     state::AppState,
     tab_selection::TabSelectionWidget,
-    timeline::TimelineWidget,
+    timeline::{LocalVariableWidget, TimelineWidget},
 };
 use anyhow::Error;
 use py_spy::Config;
@@ -101,8 +101,13 @@ where
             .direction(Direction::Vertical)
             .constraints(vec![Constraint::Max(2), Constraint::Fill(50)])
             .areas(frame.area());
+        let [timeline, locals] = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(vec![Constraint::Fill(4), Constraint::Fill(1)])
+            .areas(tab);
         frame.render_stateful_widget(TabSelectionWidget {}, tab_selector, &mut self.app_state);
-        frame.render_stateful_widget(TimelineWidget {}, tab, &mut self.app_state);
+        frame.render_stateful_widget(TimelineWidget {}, timeline, &mut self.app_state);
+        frame.render_stateful_widget(LocalVariableWidget {}, locals, &mut self.app_state);
     }
 
     pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<(), Error> {

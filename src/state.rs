@@ -22,6 +22,7 @@ pub enum ViewPortRight {
 pub(crate) struct ViewPortBounds {
     pub right: ViewPortRight,
     pub width: Duration,
+    pub selected_depth: u32,
 }
 
 impl Default for ViewPortBounds {
@@ -29,6 +30,7 @@ impl Default for ViewPortBounds {
         Self {
             right: ViewPortRight::Latest,
             width: Duration::from_secs(60),
+            selected_depth: 0,
         }
     }
 }
@@ -64,7 +66,7 @@ impl ViewPortBounds {
         }
     }
 
-    pub fn render_header(&self, queue: &ForgettingQueue) -> Block {
+    pub fn get_block(&self, queue: &ForgettingQueue) -> Block {
         Block::default()
             .title(
                 Line::from(format!(
@@ -92,7 +94,7 @@ impl ViewPortBounds {
                 })
                 .left_aligned(),
             )
-            .borders(Borders::TOP)
+            .borders(Borders::ALL)
     }
 }
 

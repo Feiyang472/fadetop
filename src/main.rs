@@ -19,6 +19,8 @@ struct AppConfig {
     window_width_seconds: u64,
     subprocesses: bool,
     native: bool,
+    // 1/128 max length of string repr of variable
+    dump_locals: u64,
 }
 
 fn main() -> Result<(), Error> {
@@ -28,6 +30,7 @@ fn main() -> Result<(), Error> {
         .set_default("window_width_seconds", "100")?
         .set_default("subprocesses", "true")?
         .set_default("native", "true")?
+        .set_default("dump_locals", "1")?
         .add_source(config::File::with_name("fadetop_config.toml").required(false))
         .add_source(config::Environment::with_prefix("FADETOP"))
         .build()?
@@ -41,6 +44,7 @@ fn main() -> Result<(), Error> {
             sampling_rate: configs.sampling_rate,
             subprocesses: configs.subprocesses,
             native: configs.native,
+            dump_locals: configs.dump_locals,
             ..Default::default()
         },
     ))

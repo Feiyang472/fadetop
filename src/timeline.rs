@@ -9,6 +9,15 @@ use crate::state::{AppState, ViewPortRight};
 
 pub struct TimelineWidget {}
 
+pub struct LocalVariableWidget {}
+
+impl StatefulWidget for LocalVariableWidget {
+    type State = AppState;
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        
+    }
+}
+
 impl StatefulWidget for TimelineWidget {
     type State = AppState;
 
@@ -28,7 +37,7 @@ impl StatefulWidget for TimelineWidget {
                 let window_width = state.viewport_bound.width;
                 let visible_start = visible_end - window_width;
 
-                let block = state.viewport_bound.render_header(&queue);
+                let block = state.viewport_bound.get_block(&queue);
 
                 let inner = block.inner(area);
                 block.render(area, buf);
