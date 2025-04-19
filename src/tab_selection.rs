@@ -20,7 +20,7 @@ impl StatefulWidget for TabSelectionWidget {
             Ok(queues) => Tabs::new(queues.keys().map(|tid| format!("{:#x}", tid)))
                 .block(Block::new().borders(Borders::TOP).title("Threads"))
                 .highlight_style(highlight_style)
-                .select(state.selected_tab)
+                .select(state.selected_thread)
                 .padding("[", "]")
                 .divider(", ")
                 .render(area, buf),

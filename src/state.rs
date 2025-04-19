@@ -100,7 +100,7 @@ impl ViewPortBounds {
 
 #[derive(Debug)]
 pub struct AppState {
-    pub selected_tab: usize,
+    pub selected_thread: usize,
     pub forgetting_queues: Arc<RwLock<ForgettingQueueMap>>,
     pub stack_level_scroll_state: ScrollbarState,
     pub(crate) viewport_bound: ViewPortBounds,
@@ -118,7 +118,7 @@ impl AppState {
 
     pub fn new() -> Self {
         Self {
-            selected_tab: 0,
+            selected_thread: 0,
             forgetting_queues: Arc::default(),
             stack_level_scroll_state: ScrollbarState::default(),
             viewport_bound: ViewPortBounds::default(),
@@ -135,8 +135,8 @@ impl AppState {
     }
 
     pub fn next_tab(&mut self) -> Result<(), Error> {
-        self.selected_tab = self
-            .selected_tab
+        self.selected_thread = self
+            .selected_thread
             .overflowing_add(1)
             .0
             .checked_rem(self.num_threads()?)
@@ -145,8 +145,8 @@ impl AppState {
     }
     pub fn prev_tab(&mut self) -> Result<(), Error> {
         let num_threads = self.num_threads()?;
-        self.selected_tab = self
-            .selected_tab
+        self.selected_thread = self
+            .selected_thread
             .overflowing_add(num_threads.saturating_sub(1))
             .0
             .checked_rem(num_threads)
