@@ -7,9 +7,9 @@ use ratatui::{
 
 use crate::state::AppState;
 
-pub struct TabSelectionWidget {}
+pub struct ThreadSelectionWidget {}
 
-impl StatefulWidget for TabSelectionWidget {
+impl StatefulWidget for ThreadSelectionWidget {
     type State = AppState;
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         let highlight_style = (Color::default(), Color::Blue);

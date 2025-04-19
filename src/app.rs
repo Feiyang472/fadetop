@@ -2,7 +2,7 @@ use crate::{
     event::UpdateEvent,
     priority::{ForgetRules, SamplerOps},
     state::AppState,
-    tab_selection::TabSelectionWidget,
+    thread_selection::ThreadSelectionWidget,
     timeline::{LocalVariableWidget, TimelineWidget},
 };
 use anyhow::Error;
@@ -89,7 +89,7 @@ impl FadeTopApp {
             .direction(Direction::Horizontal)
             .constraints(vec![Constraint::Fill(4), Constraint::Fill(1)])
             .areas(tab);
-        frame.render_stateful_widget(TabSelectionWidget {}, tab_selector, &mut self.app_state);
+        frame.render_stateful_widget(ThreadSelectionWidget {}, tab_selector, &mut self.app_state);
         frame.render_stateful_widget(TimelineWidget {}, timeline, &mut self.app_state);
         frame.render_stateful_widget(LocalVariableWidget {}, locals, &mut self.app_state);
     }
