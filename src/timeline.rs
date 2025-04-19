@@ -13,9 +13,7 @@ pub struct LocalVariableWidget {}
 
 impl StatefulWidget for LocalVariableWidget {
     type State = AppState;
-    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        
-    }
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {}
 }
 
 impl StatefulWidget for TimelineWidget {

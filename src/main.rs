@@ -37,20 +37,23 @@ fn main() -> Result<(), Error> {
         .try_deserialize::<AppConfig>()?;
 
     let terminal = ratatui::init();
-    let app = FadeTopApp::new((
-        args.pid,
-        py_spy::Config {
-            blocking: py_spy::config::LockingStrategy::NonBlocking,
-            sampling_rate: configs.sampling_rate,
-            subprocesses: configs.subprocesses,
-            native: configs.native,
-            dump_locals: configs.dump_locals,
-            ..Default::default()
-        },
-    ))
-    .with_viewport_window(Duration::from_secs(configs.window_width_seconds));
+    let app =
+        FadeTopApp::new().with_viewport_window(Duration::from_secs(configs.window_width_seconds));
 
-    let result = app.run(terminal);
+    let result = app.run(
+        terminal,
+        py_spy::sampler::Sampler::new(
+            args.pid,
+            &py_spy::Config {
+                blocking: py_spy::config::LockingStrategy::NonBlocking,
+                sampling_rate: configs.sampling_rate,
+                subprocesses: configs.subprocesses,
+                native: configs.native,
+                dump_locals: configs.dump_locals,
+                ..Default::default()
+            },
+        )?,
+    );
     ratatui::restore();
     result
 }

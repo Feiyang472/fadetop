@@ -6,35 +6,20 @@ use crate::{
     timeline::{LocalVariableWidget, TimelineWidget},
 };
 use anyhow::Error;
-use py_spy::Config;
 use ratatui::{
     DefaultTerminal, crossterm,
     layout::{Constraint, Direction, Layout},
     prelude::Frame,
 };
-use remoteprocess::Pid;
 use std::{
     sync::{Arc, mpsc},
     thread,
     time::Duration,
 };
 
-pub trait SamplerFactory: Clone + Send + Sync {
-    type Sampler: SamplerOps;
-    fn create_sampler(&self) -> Result<Self::Sampler, Error>;
-}
-
-impl SamplerFactory for (Pid, Config) {
-    type Sampler = py_spy::sampler::Sampler;
-    fn create_sampler(&self) -> Result<Self::Sampler, Error> {
-        Self::Sampler::new(self.0, &self.1)
-    }
-}
-
 #[derive(Debug)]
-pub struct FadeTopApp<F: SamplerFactory> {
+pub struct FadeTopApp {
     pub app_state: AppState,
-    sampler_creater: F,
 }
 
 fn send_terminal_event(tx: mpsc::Sender<UpdateEvent>) -> Result<(), Error> {
@@ -43,14 +28,10 @@ fn send_terminal_event(tx: mpsc::Sender<UpdateEvent>) -> Result<(), Error> {
     }
 }
 
-impl<F> FadeTopApp<F>
-where
-    F: SamplerFactory,
-{
-    pub fn new(sampler_creater: F) -> Self {
+impl FadeTopApp {
+    pub fn new() -> Self {
         Self {
             app_state: AppState::new(),
-            sampler_creater,
         }
     }
 
@@ -63,7 +44,11 @@ where
         Ok(self)
     }
 
-    fn run_event_senders(&self, sender: mpsc::Sender<UpdateEvent>) -> Result<(), Error> {
+    fn run_event_senders<S: SamplerOps>(
+        &self,
+        sender: mpsc::Sender<UpdateEvent>,
+        sampler: S,
+    ) -> Result<(), Error> {
         // Existing terminal event sender
         thread::spawn({
             let cloned_sender = sender.clone();
@@ -73,7 +58,6 @@ where
         });
 
         // Existing sampler event sender
-        let sampler = self.sampler_creater.create_sampler()?;
         let queue = Arc::clone(&self.app_state.forgetting_queues);
         thread::spawn({
             move || {
@@ -110,14 +94,18 @@ where
         frame.render_stateful_widget(LocalVariableWidget {}, locals, &mut self.app_state);
     }
 
-    pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<(), Error> {
+    pub fn run<S: SamplerOps>(
+        mut self,
+        mut terminal: DefaultTerminal,
+        sampler: S,
+    ) -> Result<(), Error> {
         // Initialize a Tokio runtime
         let runtime = tokio::runtime::Runtime::new()?;
         let (event_tx, event_rx) = mpsc::channel::<UpdateEvent>();
 
         // Run the event senders within the Tokio runtime
         runtime.block_on(async {
-            self.run_event_senders(event_tx)?;
+            self.run_event_senders(event_tx, sampler)?;
             Ok::<(), Error>(())
         })?;
 

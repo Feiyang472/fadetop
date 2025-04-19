@@ -2,7 +2,7 @@ use anyhow::Error;
 use ratatui::crossterm::{self};
 
 use crate::{
-    app::{FadeTopApp, SamplerFactory},
+    app::FadeTopApp,
     errors::AppError,
 };
 
@@ -14,10 +14,7 @@ pub enum UpdateEvent {
 }
 
 impl UpdateEvent {
-    pub fn update_state<F>(self, app: &mut FadeTopApp<F>) -> Result<(), Error>
-    where
-        F: SamplerFactory,
-    {
+    pub fn update_state(self, app: &mut FadeTopApp) -> Result<(), Error> {
         match self {
             UpdateEvent::Input(term_event) => UpdateEvent::handle_crossterm_events(term_event, app),
             UpdateEvent::Periodic => Ok(()),
@@ -25,10 +22,7 @@ impl UpdateEvent {
         }
     }
 
-    fn handle_crossterm_events<F>(term_event: Event, app: &mut FadeTopApp<F>) -> Result<(), Error>
-    where
-        F: SamplerFactory,
-    {
+    fn handle_crossterm_events(term_event: Event, app: &mut FadeTopApp) -> Result<(), Error> {
         match term_event {
             Event::Key(key) => match key.code {
                 KeyCode::Right => app.app_state.next_tab(),
