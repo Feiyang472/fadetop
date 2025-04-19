@@ -1,37 +1,25 @@
 use crate::{
-    event::UpdateEvent, priority::SamplerOps, state::AppState, tab_selection::TabSelectionWidget,
-    timeline::TimelineWidget,
+    event::UpdateEvent,
+    priority::{ForgetRules, SamplerOps},
+    state::AppState,
+    thread_selection::ThreadSelectionWidget,
+    timeline::{LocalVariableWidget, TimelineWidget},
 };
 use anyhow::Error;
-use py_spy::Config;
 use ratatui::{
     DefaultTerminal, crossterm,
     layout::{Constraint, Direction, Layout},
     prelude::Frame,
 };
-use remoteprocess::Pid;
 use std::{
     sync::{Arc, mpsc},
     thread,
+    time::Duration,
 };
 
-pub trait SamplerFactory: Clone + Send + Sync {
-    type Sampler: SamplerOps;
-    fn create_sampler(&self) -> Result<Self::Sampler, Error>;
-}
-
-impl SamplerFactory for (Pid, Config) {
-    type Sampler = py_spy::sampler::Sampler;
-    fn create_sampler(&self) -> Result<Self::Sampler, Error> {
-        Self::Sampler::new(self.0, &self.1)
-    }
-}
-
 #[derive(Debug)]
-pub struct FadeTopApp<F: SamplerFactory> {
-    running: bool,
-    pub tab_selection_state: AppState,
-    sampler_creater: F,
+pub struct FadeTopApp {
+    pub app_state: AppState,
 }
 
 fn send_terminal_event(tx: mpsc::Sender<UpdateEvent>) -> Result<(), Error> {
@@ -40,11 +28,27 @@ fn send_terminal_event(tx: mpsc::Sender<UpdateEvent>) -> Result<(), Error> {
     }
 }
 
-impl<F> FadeTopApp<F>
-where
-    F: SamplerFactory,
-{
-    fn run_event_senders(&self, sender: mpsc::Sender<UpdateEvent>) -> Result<(), Error> {
+impl FadeTopApp {
+    pub fn new() -> Self {
+        Self {
+            app_state: AppState::new(),
+        }
+    }
+
+    pub fn with_rules(self, rules: Vec<ForgetRules>) -> Result<Self, Error> {
+        self.app_state
+            .forgetting_queues
+            .write()
+            .map_err(|_| std::sync::PoisonError::new(()))?
+            .with_rules(rules);
+        Ok(self)
+    }
+
+    fn run_event_senders<S: SamplerOps>(
+        &self,
+        sender: mpsc::Sender<UpdateEvent>,
+        sampler: S,
+    ) -> Result<(), Error> {
         // Existing terminal event sender
         thread::spawn({
             let cloned_sender = sender.clone();
@@ -54,8 +58,7 @@ where
         });
 
         // Existing sampler event sender
-        let sampler = self.sampler_creater.create_sampler()?;
-        let queue = Arc::clone(&self.tab_selection_state.forgetting_queues);
+        let queue = Arc::clone(&self.app_state.forgetting_queues);
         thread::spawn({
             move || {
                 sampler.push_to_queue(queue).unwrap();
@@ -77,48 +80,44 @@ where
         Ok(())
     }
 
-    pub fn new(sampler_creater: F) -> Self {
-        Self {
-            running: false,
-            tab_selection_state: AppState::new(),
-            sampler_creater,
-        }
-    }
-
     fn render_full_app(&mut self, frame: &mut Frame) {
         let [tab_selector, tab] = Layout::default()
             .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Length(3), Constraint::Fill(50)])
+            .constraints(vec![Constraint::Max(2), Constraint::Fill(50)])
             .areas(frame.area());
-        frame.render_stateful_widget(
-            TabSelectionWidget {},
-            tab_selector,
-            &mut self.tab_selection_state,
-        );
-        frame.render_stateful_widget(TimelineWidget {}, tab, &mut self.tab_selection_state);
+        let [timeline, locals] = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(vec![Constraint::Fill(4), Constraint::Fill(1)])
+            .areas(tab);
+        frame.render_stateful_widget(ThreadSelectionWidget {}, tab_selector, &mut self.app_state);
+        frame.render_stateful_widget(TimelineWidget {}, timeline, &mut self.app_state);
+        frame.render_stateful_widget(LocalVariableWidget {}, locals, &mut self.app_state);
     }
 
-    pub fn run(mut self, mut terminal: DefaultTerminal) -> Result<(), Error> {
-        self.running = true;
-
+    pub fn run<S: SamplerOps>(
+        mut self,
+        mut terminal: DefaultTerminal,
+        sampler: S,
+    ) -> Result<(), Error> {
         // Initialize a Tokio runtime
         let runtime = tokio::runtime::Runtime::new()?;
         let (event_tx, event_rx) = mpsc::channel::<UpdateEvent>();
 
         // Run the event senders within the Tokio runtime
         runtime.block_on(async {
-            self.run_event_senders(event_tx)?;
+            self.run_event_senders(event_tx, sampler)?;
             Ok::<(), Error>(())
         })?;
 
-        while self.running {
+        while self.app_state.is_running() {
             terminal.draw(|frame| self.render_full_app(frame))?;
-            event_rx.recv().unwrap().update_state(&mut self).unwrap();
+            event_rx.recv()?.update_state(&mut self)?;
         }
         Ok(())
     }
 
-    pub fn quit(&mut self) {
-        self.running = false;
+    pub fn with_viewport_window(mut self, width: Duration) -> Self {
+        self.app_state.viewport_bound.width = width;
+        self
     }
 }

@@ -1,12 +1,11 @@
-use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::thread;
+use std::time::Duration;
 
 use anyhow::Error;
-use fadetop::priority::ForgettingQueueMap;
-use fadetop::priority::ForgettingQueueMapOps;
+use fadetop::priority::{ForgetRules, ForgettingQueueMap};
 use fadetop::{
-    app::{FadeTopApp, SamplerFactory},
+    app::FadeTopApp,
     priority::SamplerOps,
 };
 use py_spy::{Frame, StackTrace};
@@ -106,19 +105,16 @@ impl SamplerOps for MockSampler {
     }
 }
 
-impl SamplerFactory for MockSampler {
-    type Sampler = MockSampler;
-
-    fn create_sampler(&self) -> Result<Self::Sampler, Error> {
-        Ok(MockSampler {})
-    }
-}
-
 fn main() -> Result<(), Error> {
     let terminal = ratatui::init();
-    let app = FadeTopApp::<MockSampler>::new();
+    let app = FadeTopApp::new()
+        .with_rules(vec![ForgetRules::RectLinear {
+            at_least: Duration::from_secs(10),
+            ratio: 0.0,
+        }])
+        .unwrap();
 
-    let result = app.run(terminal);
+    let result = app.run(terminal, MockSampler {});
     ratatui::restore();
     result
 }

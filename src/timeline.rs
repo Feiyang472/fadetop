@@ -1,111 +1,88 @@
 use ratatui::{
     buffer::Buffer,
-    layout::{Margin, Rect},
+    layout::Rect,
     style::{Color, Style},
-    widgets::{
-        Block, Borders, Scrollbar, ScrollbarOrientation, ScrollbarState, StatefulWidget, Widget,
-    },
+    widgets::{StatefulWidget, Widget},
 };
 
-use crate::state::AppState;
+use crate::state::{AppState, ViewPortRight};
 
 pub struct TimelineWidget {}
+
+pub struct LocalVariableWidget {}
+
+impl StatefulWidget for LocalVariableWidget {
+    type State = AppState;
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {}
+}
 
 impl StatefulWidget for TimelineWidget {
     type State = AppState;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let block = Block::default().title("Timeline").borders(Borders::TOP);
-        block.clone().render(area, buf);
-
-        if let Some((_tid, queue)) = state
-            .forgetting_queues
-            .write()
-            .unwrap()
-            .iter()
-            .nth(state.selected_tab)
-        {
-            // Render finished events
-
-            let total_duration = queue.last_update - queue.start_ts;
-
-            let (visible_end, window_width) = (
-                state.viewport_time_bound.0.unwrap_or(queue.last_update),
-                state.viewport_time_bound.1.min(total_duration),
-            );
-
-            let visible_start = visible_end - window_width;
-
-            state.time_scroll_state = state
-                .time_scroll_state
-                // for some reason content length has to be the length of the content not in the current viewport
-                .content_length((total_duration - window_width).as_micros() as usize)
-                .position((visible_start - queue.start_ts).as_micros() as usize)
-                .viewport_content_length(window_width.as_micros() as usize);
-
-            self.render_scrollbar(area, buf, &mut state.time_scroll_state);
-
-            let inner = block.inner(area);
-            let width = inner.width as usize;
-            queue.finished_events.iter().for_each(|record| {
-                if record.start > visible_end {
-                    return;
+        if let Ok(queues) = state.forgetting_queues.read() {
+            if let Some((_tid, queue)) = queues.iter().nth(state.selected_thread) {
+                if let ViewPortRight::Selected(end) = state.viewport_bound.right {
+                    if end > queue.last_update {
+                        state.viewport_bound.right = ViewPortRight::Latest;
+                    }
                 }
-                if record.end < visible_start {
-                    return;
-                }
-                if record.depth >= inner.height as usize {
-                    return;
-                }
-                render_event(
-                    buf,
-                    inner,
-                    (record.start - visible_start).as_micros() as usize,
-                    (record.end - visible_start).as_micros() as usize,
-                    record.depth as u16,
-                    &record.frame_key.name,
-                    window_width.as_micros() as usize,
-                    width,
-                    Color::Blue,
-                );
-            });
+                let visible_end = match state.viewport_bound.right {
+                    ViewPortRight::Selected(end) => end,
+                    ViewPortRight::Latest => queue.last_update,
+                };
 
-            for (depth, record) in queue
-                .unfinished_events
-                .iter()
-                .take(inner.height as usize)
-                .enumerate()
-            {
-                render_event(
-                    buf,
-                    inner,
-                    (record.start - visible_start).as_micros() as usize,
-                    window_width.as_micros() as usize, // Use window_width.as_micros() as usize as the "end" for unfinished events
-                    depth as u16,
-                    &record.frame_key.name,
-                    window_width.as_micros() as usize,
-                    width,
-                    Color::Red,
-                );
+                let window_width = state.viewport_bound.width;
+                let visible_start = visible_end - window_width;
+
+                let block = state.viewport_bound.get_block(&queue);
+
+                let inner = block.inner(area);
+                block.render(area, buf);
+
+                let width = inner.width as usize;
+
+                queue.finished_events.iter().for_each(|record| {
+                    if record.start <= visible_end
+                        && record.end >= visible_start
+                        && record.depth < inner.height as usize
+                    {
+                        render_event(
+                            buf,
+                            inner,
+                            (record.start - visible_start).as_micros() as usize,
+                            (record.end - visible_start).as_micros() as usize,
+                            record.depth as u16,
+                            &record.frame_key.name,
+                            window_width.as_micros() as usize,
+                            width,
+                            Color::Blue,
+                        );
+                    }
+                });
+
+                queue
+                    .unfinished_events
+                    .iter()
+                    .take(inner.height as usize)
+                    .enumerate()
+                    .for_each(|(depth, record)| {
+                        render_event(
+                            buf,
+                            inner,
+                            (record.start - visible_start).as_micros() as usize,
+                            window_width.as_micros() as usize,
+                            depth as u16,
+                            &record.frame_key.name,
+                            window_width.as_micros() as usize,
+                            width,
+                            Color::Red,
+                        );
+                    });
             }
+        } else {
+            state.quit();
         }
-    }
-}
-
-impl TimelineWidget {
-    pub fn render_scrollbar(&self, area: Rect, buf: &mut Buffer, state: &mut ScrollbarState) {
-        Scrollbar::default()
-            .orientation(ScrollbarOrientation::HorizontalBottom)
-            .begin_symbol(Some("a"))
-            .end_symbol(Some("d"))
-            .render(
-                area.inner(Margin {
-                    vertical: 1,
-                    horizontal: 1,
-                }),
-                buf,
-                state,
-            );
     }
 }
 
@@ -117,16 +94,16 @@ fn render_event(
     end: usize,
     depth: u16,
     name: &str,
-    total_duration: usize,
+    window_width: usize,
     width: usize,
     color: Color,
 ) {
-    if total_duration == 0 {
+    if window_width == 0 {
         return;
     }
     // Calculate relative positions
-    let relative_start = (start * width) / total_duration;
-    let relative_end = (end * width) / total_duration;
+    let relative_start = (start * width) / window_width;
+    let relative_end = (end * width) / window_width;
 
     // Ensure the range is within bounds
     let x_start = inner.left() + relative_start as u16;
