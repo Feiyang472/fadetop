@@ -1,6 +1,6 @@
 pub mod app;
-pub mod event;
+pub mod errors;
 pub mod priority;
+pub mod ser;
 mod state;
-pub mod tab_selection;
-pub mod timeline;
+pub mod tabs;
