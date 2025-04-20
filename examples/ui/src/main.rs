@@ -1,21 +1,18 @@
-use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 use std::thread;
+use std::time::Duration;
 
 use anyhow::Error;
-use fadetop::priority::ForgettingQueueMap;
-use fadetop::priority::ForgettingQueueMapOps;
-use fadetop::{
-    app::{FadeTopApp, SamplerFactory},
-    priority::SamplerOps,
-};
+use fadetop::priority::{ForgetRules, SpiedRecordQueueMap};
+use fadetop::{app::FadeTopApp, priority::SamplerOps};
+use py_spy::stack_trace::LocalVariable;
 use py_spy::{Frame, StackTrace};
 
 #[derive(Clone, Debug, Default)]
 struct MockSampler {}
 
 impl SamplerOps for MockSampler {
-    fn push_to_queue(self, queue: Arc<RwLock<ForgettingQueueMap>>) -> Result<(), Error> {
+    fn push_to_queue(self, queue: Arc<RwLock<SpiedRecordQueueMap>>) -> Result<(), Error> {
         loop {
             let frame_template = Frame {
                 name: "level0".to_string(),
@@ -23,7 +20,12 @@ impl SamplerOps for MockSampler {
                 line: 1,
                 module: Some("test".to_string()),
                 short_filename: Some("test.py".to_string()),
-                locals: None,
+                locals: Some(vec![LocalVariable {
+                    name: "x".to_string(),
+                    addr: 10,
+                    arg: true,
+                    repr: Some("data".to_string()),
+                }]),
                 is_entry: false,
             };
 
@@ -55,10 +57,23 @@ impl SamplerOps for MockSampler {
             }
             for _ in 0..10 {
                 thread::sleep(std::time::Duration::from_millis(10));
+
+                let total_events: usize = queue
+                    .read()
+                    .unwrap()
+                    .iter()
+                    .map(|(_, x)| x.finished_events.len())
+                    .sum();
                 queue.write().unwrap().increment(&StackTrace {
                     frames: vec![
                         Frame {
                             name: "level3".to_string(),
+                            locals: Some(vec![LocalVariable {
+                                name: "x".to_string(),
+                                addr: 10,
+                                arg: true,
+                                repr: Some(format!("{:?}", total_events)),
+                            }]),
                             ..frame_template.clone()
                         },
                         Frame {
@@ -106,19 +121,16 @@ impl SamplerOps for MockSampler {
     }
 }
 
-impl SamplerFactory for MockSampler {
-    type Sampler = MockSampler;
-
-    fn create_sampler(&self) -> Result<Self::Sampler, Error> {
-        Ok(MockSampler {})
-    }
-}
-
 fn main() -> Result<(), Error> {
     let terminal = ratatui::init();
-    let app = FadeTopApp::<MockSampler>::new();
+    let app = FadeTopApp::new()
+        .with_rules(vec![ForgetRules::RectLinear {
+            at_least: Duration::from_secs(10),
+            ratio: 0.0,
+        }])
+        .unwrap();
 
-    let result = app.run(terminal);
+    let result = app.run(terminal, MockSampler {});
     ratatui::restore();
     result
 }

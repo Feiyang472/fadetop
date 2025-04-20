@@ -1,14 +1,21 @@
 use anyhow::Error;
 use py_spy::sampler;
 use py_spy::stack_trace::Frame;
+use py_spy::stack_trace::LocalVariable;
 use py_spy::stack_trace::StackTrace;
 use remoteprocess::{Pid, Tid};
-use std::cmp::min;
+use serde::Deserialize;
+use std::cmp::Reverse;
 use std::collections::BinaryHeap;
 use std::collections::HashMap;
+use std::collections::hash_map::Iter;
+use std::collections::hash_map::Keys;
 use std::sync::Arc;
 use std::sync::RwLock;
+use std::time::Duration;
 use std::time::Instant;
+
+use crate::ser::parse_duration;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FrameKey {
@@ -30,11 +37,12 @@ pub struct FinishedRecord {
     pub start: Instant,
     pub end: Instant,
     pub depth: usize,
+    forget_time: ForgetTime,
 }
 
 impl Ord for FinishedRecord {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        self.end.cmp(&other.end).reverse()
+        Reverse(self.forget_time).cmp(&Reverse(other.forget_time))
     }
 }
 
@@ -48,19 +56,26 @@ impl PartialOrd for FinishedRecord {
 pub struct UnfinishedRecord {
     pub frame_key: FrameKey,
     pub start: Instant,
+    locals: Option<Vec<LocalVariable>>,
+}
+
+impl UnfinishedRecord {
+    pub fn locals(&self) -> Option<&Vec<LocalVariable>> {
+        self.locals.as_ref()
+    }
 }
 
 #[derive(Clone, Debug)]
-pub struct ForgettingQueue {
+pub struct SpiedRecordQueue {
     pub unfinished_events: Vec<UnfinishedRecord>,
     pub finished_events: BinaryHeap<FinishedRecord>,
     pub start_ts: Instant,
     pub last_update: Instant,
 }
 
-impl Default for ForgettingQueue {
+impl Default for SpiedRecordQueue {
     fn default() -> Self {
-        ForgettingQueue {
+        SpiedRecordQueue {
             finished_events: BinaryHeap::new(),
             unfinished_events: vec![],
             start_ts: Instant::now(),
@@ -75,6 +90,7 @@ fn event(
     start: Instant,
     end: Instant,
     depth: usize,
+    forget_time: ForgetTime,
 ) -> FinishedRecord {
     FinishedRecord {
         frame_key: FrameKey {
@@ -86,37 +102,137 @@ fn event(
         start,
         end,
         depth,
+        forget_time,
     }
 }
 
-pub type ForgettingQueueMap = HashMap<Tid, ForgettingQueue>;
-
-pub trait ForgettingQueueMapOps {
-    fn increment(&mut self, trace: &StackTrace);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ForgetTime {
+    When(Instant),
+    Never,
 }
 
-impl ForgettingQueueMapOps for ForgettingQueueMap {
-    fn increment(&mut self, trace: &StackTrace) {
+impl Ord for ForgetTime {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (ForgetTime::When(a), ForgetTime::When(b)) => a.cmp(b),
+            (ForgetTime::Never, ForgetTime::Never) => std::cmp::Ordering::Equal,
+            (ForgetTime::When(_), ForgetTime::Never) => std::cmp::Ordering::Less,
+            (ForgetTime::Never, ForgetTime::When(_)) => std::cmp::Ordering::Greater,
+        }
+    }
+}
+
+impl PartialOrd for ForgetTime {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type", rename_all = "lowercase")]
+pub enum ForgetRules {
+    LastedLessThan(#[serde(deserialize_with = "parse_duration")] Duration),
+    RectLinear {
+        #[serde(deserialize_with = "parse_duration")]
+        at_least: Duration,
+        ratio: f32,
+    },
+}
+
+impl ForgetRules {
+    fn pop_time(&self, start: Instant, end: Instant) -> ForgetTime {
+        match *self {
+            Self::LastedLessThan(period) => {
+                if period < end - start {
+                    ForgetTime::When(end)
+                } else {
+                    ForgetTime::Never
+                }
+            }
+            Self::RectLinear { at_least, ratio } => {
+                ForgetTime::When(end + at_least + (end - start).mul_f32(ratio))
+            }
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct SpiedRecordQueueMap {
+    map: HashMap<Tid, SpiedRecordQueue>,
+    rules: Vec<ForgetRules>,
+}
+
+impl SpiedRecordQueueMap {
+    pub fn keys(&self) -> Keys<'_, Tid, SpiedRecordQueue> {
+        self.map.keys()
+    }
+    pub fn iter(&self) -> Iter<'_, Tid, SpiedRecordQueue> {
+        self.map.iter()
+    }
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+
+    pub fn with_rules(&mut self, rules: Vec<ForgetRules>) {
+        self.rules = rules;
+    }
+
+    fn forget_time(&self, start: Instant, end: Instant) -> ForgetTime {
+        self.rules
+            .iter()
+            .map(|rule| rule.pop_time(start, end))
+            .min()
+            .unwrap_or(ForgetTime::Never)
+    }
+
+    pub fn increment(&mut self, trace: &StackTrace) {
         let now = Instant::now();
 
-        let mut queue = self.remove(&(trace.thread_id as Tid)).unwrap_or_default();
+        self.map.retain(|_, queue| {
+            while let Some(top) = queue.finished_events.peek() {
+                match top.forget_time {
+                    ForgetTime::Never => return true,
+                    ForgetTime::When(time) => {
+                        if time > now {
+                            return true;
+                        } else {
+                            queue.finished_events.pop().unwrap();
+                        }
+                    }
+                }
+            }
+            !queue.unfinished_events.is_empty()
+        });
+
+        let mut queue = self
+            .map
+            .remove(&(trace.thread_id as Tid))
+            .unwrap_or_default();
 
         let mut prev_frames = queue.unfinished_events;
 
-        let new_idx = prev_frames
-            .iter()
-            .zip(trace.frames.iter().rev())
-            .position(|(prev, new)| !prev.frame_key.should_merge(new))
-            .unwrap_or(min(prev_frames.len(), trace.frames.len()));
+        let mut new_idx = 0;
+
+        for (prev, new) in prev_frames.iter_mut().zip(trace.frames.iter().rev()) {
+            if prev.frame_key.should_merge(new) {
+                prev.locals = new.locals.clone();
+                new_idx += 1;
+                continue;
+            } else {
+                break;
+            }
+        }
 
         for depth in (new_idx..prev_frames.len()).rev() {
-            let unfinished = prev_frames.pop().unwrap();
+            let unfinished = prev_frames.pop().unwrap(); // safe
             queue.finished_events.push(event(
                 trace,
                 &unfinished.frame_key,
                 unfinished.start,
                 now,
                 depth,
+                self.forget_time(unfinished.start, now),
             ));
         }
 
@@ -132,6 +248,7 @@ impl ForgettingQueueMapOps for ForgettingQueueMap {
                     pid: trace.pid,
                     tid: trace.thread_id as Tid,
                 },
+                locals: frame.locals.clone(),
             });
         }
 
@@ -139,19 +256,19 @@ impl ForgettingQueueMapOps for ForgettingQueueMap {
         queue.unfinished_events = prev_frames;
         queue.last_update = now;
 
-        self.insert(trace.thread_id as Tid, queue);
+        self.map.insert(trace.thread_id as Tid, queue);
     }
 }
 
 pub trait SamplerOps: Send + 'static {
-    fn push_to_queue(self, forgetting_queues: Arc<RwLock<ForgettingQueueMap>>)
+    fn push_to_queue(self, record_queue_map: Arc<RwLock<SpiedRecordQueueMap>>)
     -> Result<(), Error>;
 }
 
 impl SamplerOps for sampler::Sampler {
     fn push_to_queue(
         self,
-        forgetting_queues: Arc<RwLock<ForgettingQueueMap>>,
+        record_queue_map: Arc<RwLock<SpiedRecordQueueMap>>,
     ) -> Result<(), Error> {
         for mut sample in self {
             for trace in sample.traces.iter_mut() {
@@ -182,7 +299,10 @@ impl SamplerOps for sampler::Sampler {
                     }
                 }
 
-                forgetting_queues.write().unwrap().increment(trace);
+                record_queue_map
+                    .write()
+                    .map_err(|_| std::sync::PoisonError::new(threadid))?
+                    .increment(trace);
             }
         }
 
@@ -196,8 +316,37 @@ mod tests {
     use py_spy::stack_trace::StackTrace;
 
     #[test]
+    fn test_compare_record() {
+        let now = Instant::now();
+        let rec1 = FinishedRecord {
+            frame_key: FrameKey {
+                filename: "".to_string(),
+                name: "".to_string(),
+                pid: 0,
+                tid: 0,
+            },
+            start: now,
+            end: now,
+            depth: 0,
+            forget_time: ForgetTime::When(now),
+        };
+
+        let rec2 = FinishedRecord {
+            forget_time: ForgetTime::When(now + Duration::from_secs(1)),
+            ..rec1.clone()
+        };
+        assert!(rec1 > rec2);
+
+        let rec3 = FinishedRecord {
+            forget_time: ForgetTime::Never,
+            ..rec1.clone()
+        };
+        assert!(rec1 > rec3, "rec1 should be popped before rec3");
+    }
+
+    #[test]
     fn test_inserting_frames() {
-        let mut queues = HashMap::<Tid, ForgettingQueue>::default();
+        let mut queues = SpiedRecordQueueMap::default();
         let frame_template = Frame {
             name: "level0".to_string(),
             filename: "test.py".to_string(),
@@ -226,12 +375,12 @@ mod tests {
         };
 
         queues.increment(&trace);
-        assert_eq!(queues[&1].unfinished_events.len(), 2);
-        assert_eq!(queues[&1].finished_events.len(), 0);
+        assert_eq!(queues.map[&1].unfinished_events.len(), 2);
+        assert_eq!(queues.map[&1].finished_events.len(), 0);
 
         queues.increment(&trace);
-        assert_eq!(queues[&1].unfinished_events.len(), 2);
-        assert_eq!(queues[&1].finished_events.len(), 0);
+        assert_eq!(queues.map[&1].unfinished_events.len(), 2);
+        assert_eq!(queues.map[&1].finished_events.len(), 0);
 
         queues.increment(&StackTrace {
             frames: vec![
@@ -252,7 +401,7 @@ mod tests {
             ..trace.clone()
         });
         assert_eq!(
-            queues[&1]
+            queues.map[&1]
                 .unfinished_events
                 .iter()
                 .map(|event| event.frame_key.name.clone())
@@ -260,7 +409,7 @@ mod tests {
             vec!["level0", "level1_different", "level2", "level3"]
         );
         assert_eq!(
-            queues[&1]
+            queues.map[&1]
                 .finished_events
                 .iter()
                 .map(|event| event.frame_key.name.clone())
@@ -283,7 +432,7 @@ mod tests {
             ..trace.clone()
         });
         assert_eq!(
-            queues[&1]
+            queues.map[&1]
                 .unfinished_events
                 .iter()
                 .map(|event| event.frame_key.name.clone())
@@ -291,7 +440,7 @@ mod tests {
             vec!["level0", "level1_different", "level2_different"]
         );
         assert_eq!(
-            queues[&1]
+            queues.map[&1]
                 .finished_events
                 .iter()
                 .map(|event| event.frame_key.name.clone())
@@ -308,8 +457,8 @@ mod tests {
             ..trace.clone()
         });
 
-        assert_eq!(queues[&1].finished_events.len(), 3);
-        assert_eq!(queues[&1].unfinished_events.len(), 3);
-        assert_eq!(queues[&2].unfinished_events.len(), 1);
+        assert_eq!(queues.map[&1].finished_events.len(), 3);
+        assert_eq!(queues.map[&1].unfinished_events.len(), 3);
+        assert_eq!(queues.map[&2].unfinished_events.len(), 1);
     }
 }

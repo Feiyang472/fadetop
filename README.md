@@ -3,7 +3,7 @@
 FadeTop is a real-time visualizer for Python stack samples in the terminal.
 
 ![](https://github.com/Feiyang472/fadetop/actions/workflows/build.yml/badge.svg)
-![](https://github.com/Feiyang472/fadetop/actions/workflows/rust.yml/badge.svg)
+
 ![Demo](.github/term.gif)
 
 FadeTop relies on **py-spy** for generating stack traces and **ratatui** for its front-end interface.
@@ -21,12 +21,22 @@ Replace `$PID_OF_YOUR_RUNNING_PYTHON_PROCESS` with the process ID of the Python 
 I am working on packaging a binary with maturin for distribution via PyPI.
 Currently the only way to install is to clone this repository and `cargo build`.
 
-## Forgetting about Recorded Events [Work in Progress]
-While FadeTop helps identify performance patterns, it is not a full-fledged profiler.
+# Configuration
+Fadetop can be configured using both a toml file (named `fadetop_config.toml` or `$FADETOP_CONFIG` if set) and environment variables, where the latter overrides the former.
 
-A profiler retains detailed information about the runtime of various components in a program. In contrast, tools like `top` provide a summary of the current state or a short recent time window. FadeTop aims to sit somewhere in between and pop out insignificant/long-past events, so that its memory usage stays controlled over the life of a long-running python process.
+You can check your configuration by running `fadetop --help`
 
-![xkcd](.github/xkcd.png)
+## Configuration Examples
 
-I am still working on allowing the user to parametrise that curve in the chart above.
+### Example using TOML Config File
+```toml
+# Sampling rate in Hz (samples per second)
+sampling_rate = 120
+# Time window width for visualization
+window_width = "100s"
+```
 
+### Example using Environment Variables
+```bash
+export FADETOP_SAMPLING_RATE=120
+```
