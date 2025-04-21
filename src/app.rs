@@ -104,7 +104,7 @@ impl FadeTopApp {
         let [tab_selector, tab, footer] = Layout::default()
             .direction(Direction::Vertical)
             .constraints(vec![
-                Constraint::Min(2),
+                Constraint::Min(self.app_state.thread_selection.nlines(frame.area().width)),
                 Constraint::Fill(50),
                 Constraint::Length(1),
             ])
