@@ -35,6 +35,18 @@ You can check your configuration by running `fadetop --help`
 sampling_rate = 120
 # Time window width for visualization
 window_width = "100s"
+
+# Rules dictate how long events are remembered after they have finished as a function of how long they took to run.
+# The config below means an event is remembered for the shorter interval between (100 seconds + three times its duration) and (70s + 1.0 times its duration)
+
+[[rules]]
+type = "rectlinear"
+at_least = "100s"
+ratio = 3.0
+[[rules]]
+type = "rectlinear"
+at_least = "70s"
+ratio = 1.0
 ```
 
 ### Example using Environment Variables
