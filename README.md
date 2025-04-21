@@ -18,9 +18,14 @@ fadetop $PID_OF_YOUR_RUNNING_PYTHON_PROCESS
 
 Replace `$PID_OF_YOUR_RUNNING_PYTHON_PROCESS` with the process ID of the Python program you want to analyze.
 
-## Installation [Work in Progress]
-I am working on packaging a binary with maturin for distribution via PyPI.
-Currently the only way to install is to clone this repository and `cargo build`.
+## Installation
+Fadetop is published to pypi as a binary package under name `pyfadetop` (the binary will still be `fadetop`).
+Binaries are built for linux, macos, and windows.
+```
+pip install pyfadetop
+```
+
+Alternatively fadetop can be built from source using `cargo build`.
 
 ## Configuration
 Fadetop can be configured using both a toml file (named `fadetop_config.toml` or `$FADETOP_CONFIG` if set) and environment variables, where the latter overrides the former.
