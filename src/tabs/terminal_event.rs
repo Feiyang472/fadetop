@@ -31,7 +31,7 @@ impl AppState {
                     match self.focus {
                         Focus::ThreadList => self.thread_selection.handle_key_event(&key),
                         Focus::Timeline => self.viewport_bound.handle_key_event(&key),
-                        _ => {}
+                        Focus::LogView => self.local_variable_state.handle_key_event(&key),
                     }
                 }),
             },

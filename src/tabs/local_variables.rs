@@ -1,14 +1,54 @@
 use ratatui::{
     buffer::Buffer,
+    crossterm::event::{self, KeyEvent},
     layout::Rect,
-    style::{Style, Stylize},
+    style::{Color, Style, Stylize},
     text::Line,
-    widgets::{Block, Borders, List, ListState, StatefulWidget, Widget},
+    widgets::{Block, Borders, Paragraph, StatefulWidget, Widget, Wrap},
 };
 
 use crate::state::{AppState, Focus};
 
-pub struct LocalVariableSelection {}
+#[derive(Debug, Clone, Copy, Default)]
+pub struct LocalVariableSelection {
+    scroll_offset: (u16, u16),
+}
+
+impl LocalVariableSelection {
+    fn move_up(&mut self) {
+        if self.scroll_offset.0 > 0 {
+            self.scroll_offset.0 -= 1;
+        }
+    }
+
+    fn move_down(&mut self) {
+        self.scroll_offset.0 += 1;
+    }
+
+    fn move_left(&mut self) {
+        if self.scroll_offset.1 > 0 {
+            self.scroll_offset.1 -= 1;
+        }
+    }
+
+    fn move_right(&mut self) {
+        self.scroll_offset.1 += 1;
+    }
+
+    pub fn reset(&mut self) {
+        self.scroll_offset = (0, 0);
+    }
+
+    pub fn handle_key_event(&mut self, key: &KeyEvent) {
+        match key.code {
+            event::KeyCode::Up => self.move_up(),
+            event::KeyCode::Down => self.move_down(),
+            event::KeyCode::Left => self.move_left(),
+            event::KeyCode::Right => self.move_right(),
+            _ => {}
+        }
+    }
+}
 
 impl LocalVariableWidget {
     fn get_block(&self, frame_name: &str, focused: bool) -> Block {
@@ -43,22 +83,27 @@ impl StatefulWidget for LocalVariableWidget {
                         .get(state.viewport_bound.selected_depth as usize)
                 }) {
                     if let Some(locals) = record.locals() {
-                        return StatefulWidget::render(
-                            List::new(locals.iter().map(|local_var| {
-                                format!(
-                                    "{}\n  {}",
-                                    local_var.name.clone(),
-                                    local_var.repr.clone().unwrap_or_default()
-                                )
-                            }))
+                        return Widget::render(
+                            Paragraph::new(
+                                locals
+                                    .iter()
+                                    .flat_map(|local_var| {
+                                        vec![
+                                            Line::from(local_var.name.clone())
+                                                .style(Style::default().fg(Color::Indexed(4))),
+                                            Line::from(local_var.repr.clone().unwrap_or_default()),
+                                        ]
+                                    })
+                                    .collect::<Vec<Line>>(),
+                            )
+                            .scroll(state.local_variable_state.scroll_offset)
+                            .wrap(Wrap { trim: true })
                             .block(self.get_block(
                                 &record.frame_key.name.to_string(),
                                 state.focus == Focus::LogView,
                             )),
                             area,
                             buf,
-                            &mut ListState::default()
-                                .with_selected(Some(state.viewport_bound.selected_depth as usize)),
                         );
                     }
                 }

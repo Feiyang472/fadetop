@@ -24,7 +24,7 @@ impl SamplerOps for MockSampler {
                     name: "x".to_string(),
                     addr: 10,
                     arg: true,
-                    repr: Some("data".to_string()),
+                    repr: Some("data, verryyyyyy looonnnnnnng data".to_string()),
                 }]),
                 is_entry: false,
             };

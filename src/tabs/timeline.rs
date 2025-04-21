@@ -187,7 +187,11 @@ impl StatefulWidget for TimelineWidget {
                             depth as u16,
                             &record.frame_key.name,
                             window_width.as_micros() as usize,
-                            Color::Rgb(0, 150 - ((depth % 8 * 16) as u8), 200 - ((depth % 8 * 16) as u8)),
+                            Color::Rgb(
+                                0,
+                                150 - ((depth % 8 * 16) as u8),
+                                200 - ((depth % 8 * 16) as u8),
+                            ),
                         );
                     });
 
