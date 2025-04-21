@@ -77,7 +77,7 @@ impl ThreadSelectionState {
     }
 
     pub(crate) fn nlines(&self, width: u16) -> u16 {
-        (14 * self.num_threads() as u16).div_ceil(width) + 1
+        (12 * self.num_threads() as u16).div_ceil(width) + 1
     }
 
     fn render_tabs(&self, area: Rect, buf: &mut Buffer) {
@@ -89,11 +89,10 @@ impl ThreadSelectionState {
         let mut n_row = area.top();
         let titles_length = self.num_threads();
         for (i, tid) in self.available_threads.iter().enumerate() {
-
             let last_title = titles_length - 1 == i;
             let remaining_width = area.right().saturating_sub(x);
 
-            if remaining_width <= 14 {
+            if remaining_width <= 12 {
                 x = area.left();
                 n_row += 1;
             }
@@ -108,7 +107,7 @@ impl ThreadSelectionState {
             let pos = buf.set_line(
                 x,
                 n_row,
-                &Line::from(format!("{:#x}", tid)),
+                &Line::from(format!("{:08x}", tid)),
                 remaining_width,
             );
             if i == self.selected_thread {
