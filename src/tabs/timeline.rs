@@ -187,7 +187,11 @@ impl StatefulWidget for TimelineWidget {
                             depth as u16,
                             &record.frame_key.name,
                             window_width.as_micros() as usize,
-                            Color::Rgb(0, 150 - ((depth % 8 * 16) as u8), 200 - ((depth % 8 * 16) as u8)),
+                            Color::Rgb(
+                                0,
+                                150 - ((depth % 8 * 16) as u8),
+                                200 - ((depth % 8 * 16) as u8),
+                            ),
                         );
                     });
 
@@ -257,7 +261,8 @@ fn render_event(
     let x_start = inner.left() + relative_start as u16;
     let x_end = inner.left() + relative_end as u16;
 
-    if x_end > x_start {
+    if x_end > x_start + 1 {
+        // block width is unstable due to rounding
         let block_width = relative_end - relative_start;
 
         let padded_string = format!(

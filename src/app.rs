@@ -29,9 +29,11 @@ impl Widget for Footer {
     where
         Self: Sized,
     {
-        Line::from("Esc to quit, ←↑↓→ to navigate, Tab to switch tabs, i/o to zoom in/out")
-            .style(Style::default().bg(Color::Rgb(0, 0, 12)))
-            .render(area, buf);
+        Line::from(
+            "Press Esc to quit, ←↑↓→ to pan within tab, Tab to switch tabs, i/o to zoom in/out",
+        )
+        .style(Style::default().bg(Color::Rgb(0, 0, 12)))
+        .render(area, buf);
     }
 }
 
@@ -102,7 +104,7 @@ impl FadeTopApp {
         let [tab_selector, tab, footer] = Layout::default()
             .direction(Direction::Vertical)
             .constraints(vec![
-                Constraint::Max(2),
+                Constraint::Min(self.app_state.thread_selection.nlines(frame.area().width)),
                 Constraint::Fill(50),
                 Constraint::Length(1),
             ])

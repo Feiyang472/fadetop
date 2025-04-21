@@ -3,8 +3,10 @@ use ratatui::{
     crossterm::event::{self, KeyEvent},
     layout::Rect,
     style::{Color, Style, Stylize},
-    widgets::{Block, Borders, StatefulWidget, Tabs, Widget},
+    text::{Line, Span},
+    widgets::{Block, Borders, StatefulWidget, Widget},
 };
+use remoteprocess::Tid;
 
 use crate::{
     priority::{SpiedRecordQueue, SpiedRecordQueueMap},
@@ -13,10 +15,10 @@ use crate::{
 
 pub struct ThreadSelectionWidget {}
 
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Default)]
 pub(crate) struct ThreadSelectionState {
     selected_thread: usize,
-    pub num_threads: usize,
+    pub available_threads: Vec<Tid>,
 }
 
 impl ThreadSelectionWidget {
@@ -33,17 +35,21 @@ impl ThreadSelectionWidget {
 }
 
 impl ThreadSelectionState {
+    fn num_threads(&self) -> usize {
+        self.available_threads.len()
+    }
+
     fn next_thread(&mut self) {
         self.selected_thread = self
             .selected_thread
             .overflowing_add(1)
             .0
-            .checked_rem(self.num_threads)
+            .checked_rem(self.num_threads())
             .unwrap_or(0);
     }
 
     fn prev_thread(&mut self) {
-        let num_threads = self.num_threads;
+        let num_threads = self.num_threads();
         self.selected_thread = self
             .selected_thread
             .overflowing_add(num_threads.saturating_sub(1))
@@ -69,30 +75,77 @@ impl ThreadSelectionState {
             .nth(self.selected_thread)
             .map(|(_, queue)| queue)
     }
+
+    pub(crate) fn nlines(&self, width: u16) -> u16 {
+        (12 * self.num_threads() as u16).div_ceil(width) + 1
+    }
+
+    fn render_tabs(&self, area: Rect, buf: &mut Buffer) {
+        if area.is_empty() {
+            return;
+        }
+
+        let mut x = area.left();
+        let mut n_row = area.top();
+        let titles_length = self.num_threads();
+        for (i, tid) in self.available_threads.iter().enumerate() {
+            let last_title = titles_length - 1 == i;
+            let remaining_width = area.right().saturating_sub(x);
+
+            if remaining_width <= 12 {
+                x = area.left();
+                n_row += 1;
+            }
+
+            let pos = buf.set_line(x, n_row, &Line::from("["), remaining_width);
+            x = pos.0;
+            let remaining_width = area.right().saturating_sub(x);
+            if remaining_width == 0 {
+                break;
+            }
+
+            let pos = buf.set_line(
+                x,
+                n_row,
+                &Line::from(format!("{:08x}", tid)),
+                remaining_width,
+            );
+            if i == self.selected_thread {
+                buf.set_style(
+                    Rect {
+                        x,
+                        y: n_row,
+                        width: pos.0.saturating_sub(x),
+                        height: 1,
+                    },
+                    (Color::default(), Color::Blue),
+                );
+            }
+            x = pos.0;
+            let remaining_width = area.right().saturating_sub(x);
+            if remaining_width == 0 {
+                break;
+            }
+
+            let pos = buf.set_line(x, n_row, &Line::from("]"), remaining_width);
+            x = pos.0;
+            let remaining_width = area.right().saturating_sub(x);
+            if remaining_width == 0 || last_title {
+                break;
+            }
+
+            let pos = buf.set_span(x, n_row, &Span::from(", "), remaining_width);
+            x = pos.0;
+        }
+    }
 }
 
 impl StatefulWidget for ThreadSelectionWidget {
     type State = AppState;
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let highlight_style = (Color::default(), Color::Blue);
-
-        let mut quit = false;
-
-        match state.record_queue_map.read() {
-            Ok(queues) => Tabs::new(queues.keys().map(|tid| format!("{:#x}", tid)))
-                .block(self.get_block(state.focus == Focus::ThreadList))
-                .highlight_style(highlight_style)
-                .select(state.thread_selection.selected_thread)
-                .padding("[", "]")
-                .divider(", ")
-                .render(area, buf),
-            Err(_err) => {
-                quit = true;
-            }
-        };
-
-        if quit {
-            state.quit();
-        }
+        let block = self.get_block(state.focus == Focus::ThreadList);
+        let inner = block.inner(area);
+        block.render(area, buf);
+        state.thread_selection.render_tabs(inner, buf);
     }
 }
