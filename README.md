@@ -1,10 +1,11 @@
 # FadeTop
 
-FadeTop is a real-time visualizer for Python stack samples in the terminal.
+FadeTop is a real-time in-terminal visualiser for Python stack samples.
 
 ![](https://github.com/Feiyang472/fadetop/actions/workflows/build.yml/badge.svg)
 
-![Demo](.github/term.gif)
+Watch as call stacks are entered and exited, threads get spawn and destroyed, iterations proceed, or loss functions optimised.
+![Demo](.github/local.gif)
 
 FadeTop relies on **py-spy** for generating stack traces and **ratatui** for its front-end interface.
 
@@ -21,7 +22,7 @@ Replace `$PID_OF_YOUR_RUNNING_PYTHON_PROCESS` with the process ID of the Python 
 I am working on packaging a binary with maturin for distribution via PyPI.
 Currently the only way to install is to clone this repository and `cargo build`.
 
-# Configuration
+## Configuration
 Fadetop can be configured using both a toml file (named `fadetop_config.toml` or `$FADETOP_CONFIG` if set) and environment variables, where the latter overrides the former.
 
 You can check your configuration by running `fadetop --help`
