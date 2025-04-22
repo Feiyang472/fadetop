@@ -4,6 +4,14 @@ build-backend = "maturin"
 
 [project]
 name = "pyfadetop"
+authors = [
+  { name = "Feiyang472"}
+]
+license = { file = "LICENSE" }
+
+[project.urls]
+Homepage = "https://github.com/Feiyang472/fadetop"
+Repository = "https://github.com/Feiyang472/fadetop"
 
 [tool.maturin]
 bindings = "bin"

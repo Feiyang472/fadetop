@@ -1,4 +1,7 @@
-use std::time::{Duration, Instant};
+use std::{
+    ops::{DivAssign, MulAssign},
+    time::{Duration, Instant},
+};
 
 use ratatui::{
     buffer::Buffer,
@@ -39,11 +42,11 @@ impl Default for ViewPortBounds {
 
 impl ViewPortBounds {
     fn zoom_out(&mut self) {
-        self.width = self.width.mul_f32(1.5);
+        self.width.mul_assign(2);
     }
 
     fn zoom_in(&mut self) {
-        self.width = self.width.div_f32(1.5);
+        self.width.div_assign(2);
     }
 
     fn move_left(&mut self) {
@@ -168,7 +171,7 @@ impl StatefulWidget for TimelineWidget {
                             record.depth as u16,
                             &record.frame_key.name,
                             window_width.as_micros() as usize,
-                            get_color_for_name(&record.frame_key.name),
+                            get_color_for_name(&record.frame_key.fqn()),
                         );
                     }
                 });
@@ -256,12 +259,12 @@ fn render_event(
     let tab_width = inner.width as usize;
 
     let relative_start = (start * tab_width) / window_width;
-    let relative_end = ((end * tab_width) / window_width).min(tab_width);
+    let relative_end = ((end * tab_width).div_ceil(window_width)).min(tab_width);
 
     let x_start = inner.left() + relative_start as u16;
     let x_end = inner.left() + relative_end as u16;
 
-    if x_end > x_start + 1 {
+    if x_end > x_start + 2 {
         // block width is unstable due to rounding
         let block_width = relative_end - relative_start;
 

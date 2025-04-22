@@ -80,7 +80,7 @@ impl ThreadSelectionState {
         (12 * self.num_threads() as u16).div_ceil(width) + 1
     }
 
-    fn render_tabs(&self, area: Rect, buf: &mut Buffer) {
+    fn render_tabs(&mut self, area: Rect, buf: &mut Buffer) {
         if area.is_empty() {
             return;
         }
@@ -88,6 +88,8 @@ impl ThreadSelectionState {
         let mut x = area.left();
         let mut n_row = area.top();
         let titles_length = self.num_threads();
+        self.selected_thread = self.selected_thread.min(titles_length - 1);
+
         for (i, tid) in self.available_threads.iter().enumerate() {
             let last_title = titles_length - 1 == i;
             let remaining_width = area.right().saturating_sub(x);

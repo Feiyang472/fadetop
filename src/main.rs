@@ -32,7 +32,7 @@ fn main() -> Result<(), Error> {
         env::var("FADETOP_CONFIG").unwrap_or_else(|_| "fadetop_config.toml".to_string());
 
     let configs = config::Config::builder()
-        .set_default("sampling_rate", "100")?
+        .set_default("sampling_rate", "10")?
         .set_default("window_width", "100s")?
         .set_default("subprocesses", "true")?
         .set_default("native", "true")?

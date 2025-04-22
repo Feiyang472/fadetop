@@ -5,7 +5,7 @@ FadeTop is a real-time in-terminal visualiser for Python stack samples.
 ![](https://github.com/Feiyang472/fadetop/actions/workflows/build.yml/badge.svg)
 
 Watch as call stacks are entered and exited, threads get spawn and destroyed, iterations proceed, or loss functions optimised.
-![Demo](.github/local.gif)
+![Demo](https://raw.githubusercontent.com/Feiyang472/fadetop/refs/heads/main/.github/local.gif)
 
 FadeTop relies on **py-spy** for generating stack traces and **ratatui** for its front-end interface.
 

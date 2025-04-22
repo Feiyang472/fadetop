@@ -19,7 +19,7 @@ use crate::ser::parse_duration;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FrameKey {
-    pub filename: String,
+    filename: String,
     pub name: String,
     pub pid: Pid,
     pub tid: Tid,
@@ -28,6 +28,10 @@ pub struct FrameKey {
 impl FrameKey {
     fn should_merge(&self, b: &Frame) -> bool {
         self.name == b.name && self.filename == b.filename
+    }
+
+    pub fn fqn(&self) -> String {
+        format!("{}::{}", self.filename, self.name)
     }
 }
 
@@ -67,6 +71,7 @@ impl UnfinishedRecord {
 
 #[derive(Clone, Debug)]
 pub struct SpiedRecordQueue {
+
     pub unfinished_events: Vec<UnfinishedRecord>,
     pub finished_events: BinaryHeap<FinishedRecord>,
     pub start_ts: Instant,
@@ -157,6 +162,14 @@ impl ForgetRules {
     }
 }
 
+fn forget_time(rules: &Vec<ForgetRules>, start: Instant, end: Instant) -> ForgetTime {
+    rules
+        .iter()
+        .map(|rule| rule.pop_time(start, end))
+        .min()
+        .unwrap_or(ForgetTime::Never)
+}
+
 #[derive(Debug, Default)]
 pub struct SpiedRecordQueueMap {
     map: HashMap<Tid, SpiedRecordQueue>,
@@ -178,14 +191,6 @@ impl SpiedRecordQueueMap {
         self.rules = rules;
     }
 
-    fn forget_time(&self, start: Instant, end: Instant) -> ForgetTime {
-        self.rules
-            .iter()
-            .map(|rule| rule.pop_time(start, end))
-            .min()
-            .unwrap_or(ForgetTime::Never)
-    }
-
     pub fn increment(&mut self, trace: &StackTrace) {
         let now = Instant::now();
 
@@ -203,6 +208,10 @@ impl SpiedRecordQueueMap {
                 }
             }
             !queue.unfinished_events.is_empty()
+                && match forget_time(&self.rules, queue.start_ts, queue.last_update) {
+                    ForgetTime::When(when) => when > now,
+                    ForgetTime::Never => true,
+                }
         });
 
         let mut queue = self
@@ -232,7 +241,7 @@ impl SpiedRecordQueueMap {
                 unfinished.start,
                 now,
                 depth,
-                self.forget_time(unfinished.start, now),
+                forget_time(&self.rules, unfinished.start, now),
             ));
         }
 
@@ -272,36 +281,10 @@ impl SamplerOps for sampler::Sampler {
     ) -> Result<(), Error> {
         for mut sample in self {
             for trace in sample.traces.iter_mut() {
-                let threadid = trace.format_threadid();
-                let thread_fmt = if let Some(thread_name) = &trace.thread_name {
-                    format!("thread ({}): {}", threadid, thread_name)
-                } else {
-                    format!("thread ({})", threadid)
-                };
-                trace.frames.push(Frame {
-                    name: thread_fmt,
-                    filename: String::from(""),
-                    module: None,
-                    short_filename: None,
-                    line: 0,
-                    locals: None,
-                    is_entry: true,
-                });
-
-                if let Some(process_info) = trace.process_info.as_ref() {
-                    trace.frames.push(process_info.to_frame());
-                    let mut parent = process_info.parent.as_ref();
-                    while parent.is_some() {
-                        if let Some(process_info) = parent {
-                            trace.frames.push(process_info.to_frame());
-                            parent = process_info.parent.as_ref();
-                        }
-                    }
-                }
 
                 record_queue_map
                     .write()
-                    .map_err(|_| std::sync::PoisonError::new(threadid))?
+                    .map_err(|_| std::sync::PoisonError::new(trace.thread_id))?
                     .increment(trace);
             }
         }

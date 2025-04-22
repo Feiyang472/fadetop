@@ -1,7 +1,7 @@
 use ratatui::{
     buffer::Buffer,
     crossterm::event::{self, KeyEvent},
-    layout::Rect,
+    layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     text::Line,
     widgets::{Block, Borders, Paragraph, StatefulWidget, Widget, Wrap},
@@ -51,13 +51,9 @@ impl LocalVariableSelection {
 }
 
 impl LocalVariableWidget {
-    fn get_block(&self, frame_name: &str, focused: bool) -> Block {
+    fn get_block(&self, focused: bool) -> Block {
         Block::default()
-            .title(
-                Line::from(format!("Local Variables {}", frame_name))
-                    .bold()
-                    .left_aligned(),
-            )
+            .title(Line::from("Live Stack").bold().left_aligned())
             .borders(Borders::TOP | Borders::LEFT)
             .border_style(if focused {
                 Style::new().blue().on_white().bold().italic()
@@ -82,8 +78,28 @@ impl StatefulWidget for LocalVariableWidget {
                     q.unfinished_events
                         .get(state.viewport_bound.selected_depth as usize)
                 }) {
+                    let block = self.get_block(state.focus == Focus::LogView);
+                    let inner = block.inner(area);
+                    block.render(area, buf);
+
+                    let fqn = record.frame_key.fqn();
+                    let [fqn_section, local_section] = Layout::default()
+                        .direction(Direction::Vertical)
+                        .constraints(vec![
+                            Constraint::Length((fqn.len() as u16).div_ceil(inner.width)),
+                            Constraint::Fill(1),
+                        ])
+                        .areas(inner);
+
+                    Widget::render(
+                        Paragraph::new(fqn)
+                            .style(Style::new().fg(Color::White).bg(Color::Blue))
+                            .wrap(Wrap { trim: true }),
+                        fqn_section,
+                        buf,
+                    );
                     if let Some(locals) = record.locals() {
-                        return Widget::render(
+                        Widget::render(
                             Paragraph::new(
                                 locals
                                     .iter()
@@ -97,19 +113,13 @@ impl StatefulWidget for LocalVariableWidget {
                                     .collect::<Vec<Line>>(),
                             )
                             .scroll(state.local_variable_state.scroll_offset)
-                            .wrap(Wrap { trim: true })
-                            .block(self.get_block(
-                                &record.frame_key.name.to_string(),
-                                state.focus == Focus::LogView,
-                            )),
-                            area,
+                            .wrap(Wrap { trim: true }),
+                            local_section,
                             buf,
                         );
+                        return;
                     }
                 }
-
-                self.get_block(Default::default(), state.focus == Focus::LogView)
-                    .render(area, buf);
             }
             Err(_err) => {
                 quit = true;
