@@ -71,21 +71,26 @@ impl UnfinishedRecord {
 
 #[derive(Clone, Debug)]
 pub struct SpiedRecordQueue {
-
     pub unfinished_events: Vec<UnfinishedRecord>,
     pub finished_events: BinaryHeap<FinishedRecord>,
     pub start_ts: Instant,
     pub last_update: Instant,
+    thread_name: Option<String>,
 }
 
-impl Default for SpiedRecordQueue {
-    fn default() -> Self {
+impl SpiedRecordQueue {
+    fn new(thread_name: Option<String>) -> Self {
         SpiedRecordQueue {
             finished_events: BinaryHeap::new(),
             unfinished_events: vec![],
             start_ts: Instant::now(),
             last_update: Instant::now(),
+            thread_name,
         }
+    }
+
+    pub fn thread_name<'a>(&'a self) -> &'a Option<String> {
+        &self.thread_name
     }
 }
 
@@ -134,7 +139,7 @@ impl PartialOrd for ForgetTime {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ForgetRules {
     LastedLessThan(#[serde(deserialize_with = "parse_duration")] Duration),
@@ -186,6 +191,9 @@ impl SpiedRecordQueueMap {
     pub fn len(&self) -> usize {
         self.map.len()
     }
+    pub fn contains_key(&self, k: &Tid) -> bool {
+        self.map.contains_key(k)
+    }
 
     pub fn with_rules(&mut self, rules: Vec<ForgetRules>) {
         self.rules = rules;
@@ -217,7 +225,7 @@ impl SpiedRecordQueueMap {
         let mut queue = self
             .map
             .remove(&(trace.thread_id as Tid))
-            .unwrap_or_default();
+            .unwrap_or_else(|| SpiedRecordQueue::new(trace.thread_name.clone()));
 
         let mut prev_frames = queue.unfinished_events;
 
@@ -281,7 +289,6 @@ impl SamplerOps for sampler::Sampler {
     ) -> Result<(), Error> {
         for mut sample in self {
             for trace in sample.traces.iter_mut() {
-
                 record_queue_map
                     .write()
                     .map_err(|_| std::sync::PoisonError::new(trace.thread_id))?

@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use ratatui::{
     buffer::Buffer,
     crossterm::event::{self, KeyEvent},
@@ -18,7 +20,7 @@ pub struct ThreadSelectionWidget {}
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ThreadSelectionState {
     selected_thread: usize,
-    pub available_threads: Vec<Tid>,
+    pub available_threads: HashMap<Tid, Option<String>>,
 }
 
 impl ThreadSelectionWidget {
@@ -90,7 +92,7 @@ impl ThreadSelectionState {
         let titles_length = self.num_threads();
         self.selected_thread = self.selected_thread.min(titles_length - 1);
 
-        for (i, tid) in self.available_threads.iter().enumerate() {
+        for (i, tid) in self.available_threads.keys().enumerate() {
             let last_title = titles_length - 1 == i;
             let remaining_width = area.right().saturating_sub(x);
 

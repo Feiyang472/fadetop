@@ -40,14 +40,20 @@ impl AppState {
     }
 
     fn handle_periodic_tick(&mut self) -> Result<(), Error> {
-        let available_threads = self
+        let qmaps = self
             .record_queue_map
             .read()
-            .map_err(|_| std::sync::PoisonError::new(()))?
-            .keys()
-            .map(|k| *k)
-            .collect();
-        self.thread_selection.available_threads = available_threads;
+            .map_err(|_| std::sync::PoisonError::new(()))?;
+
+        self.thread_selection
+            .available_threads
+            .retain(|k, _| qmaps.contains_key(k));
+        for (k, q) in qmaps.iter() {
+            self.thread_selection
+                .available_threads
+                .entry(*k)
+                .or_insert_with(|| q.thread_name().clone());
+        }
         Ok(())
     }
 }
