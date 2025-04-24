@@ -21,6 +21,7 @@ use crate::ser::parse_duration;
 pub struct ThreadInfo {
     pub name: Option<String>,
     pub pid: Pid,
+    pub tid: Tid,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -230,6 +231,7 @@ impl SpiedRecordQueueMap {
                 SpiedRecordQueue::new(ThreadInfo {
                     name: trace.thread_name.clone(),
                     pid: trace.pid,
+                    tid: trace.thread_id as Tid,
                 })
             });
 

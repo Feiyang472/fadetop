@@ -47,17 +47,17 @@ impl AppState {
 
         self.thread_selection
             .available_threads
-            .retain(|(k, _)| qmaps.contains_key(k));
+            .retain(|tinfo| qmaps.contains_key(&tinfo.tid));
         for (k, q) in qmaps.iter() {
             if let None = self
                 .thread_selection
                 .available_threads
                 .iter()
-                .find(|(k_in, _)| k_in == k)
+                .find(|tinfo| tinfo.tid == *k)
             {
                 self.thread_selection
                     .available_threads
-                    .push((*k, q.thread_info.clone()));
+                    .push(q.thread_info.clone());
             }
         }
         Ok(())

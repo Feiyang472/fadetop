@@ -6,7 +6,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, StatefulWidget, Widget},
 };
-use remoteprocess::Tid;
 
 use crate::{
     priority::{SpiedRecordQueue, SpiedRecordQueueMap, ThreadInfo},
@@ -16,7 +15,7 @@ use crate::{
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ThreadSelectionState {
     selected_thread_index: usize,
-    pub available_threads: Vec<(Tid, ThreadInfo)>,
+    pub available_threads: Vec<ThreadInfo>,
 }
 
 pub struct ThreadSelectionWidget {}
@@ -70,7 +69,7 @@ impl ThreadSelectionState {
         &self,
         queues: &'a SpiedRecordQueueMap,
     ) -> Option<&'a SpiedRecordQueue> {
-        queues.get(&self.available_threads.get(self.selected_thread_index)?.0)
+        queues.get(&self.available_threads.get(self.selected_thread_index)?.tid)
     }
 
     fn render_tabs(&mut self, area: Rect, buf: &mut Buffer) {
@@ -81,13 +80,15 @@ impl ThreadSelectionState {
         let mut x = area.left();
         let mut n_row = area.top();
         let titles_length = self.num_threads();
-        self.selected_thread_index = self.selected_thread_index.min(titles_length.saturating_sub(1));
+        self.selected_thread_index = self
+            .selected_thread_index
+            .min(titles_length.saturating_sub(1));
 
-        for (i, (tid, tinfo)) in self.available_threads.iter().enumerate() {
+        for (i, tinfo) in self.available_threads.iter().enumerate() {
             let last_title = titles_length - 1 == i;
             let remaining_width = area.right().saturating_sub(x);
 
-            let default_title = format!("{:08x}", tid);
+            let default_title = format!("{:08x}", tinfo.tid);
 
             let title: &str = tinfo.name.as_ref().unwrap_or(&default_title);
 
@@ -103,12 +104,7 @@ impl ThreadSelectionState {
                 break;
             }
 
-            let pos = buf.set_line(
-                x,
-                n_row,
-                &Line::from(title),
-                remaining_width,
-            );
+            let pos = buf.set_line(x, n_row, &Line::from(title), remaining_width);
             if i == self.selected_thread_index {
                 buf.set_style(
                     Rect {
