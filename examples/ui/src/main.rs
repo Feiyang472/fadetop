@@ -38,7 +38,7 @@ impl SamplerOps for MockSampler {
                     },
                     frame_template.clone(),
                 ],
-                thread_name: None,
+                thread_name: Some("Main Thread".into()),
                 os_thread_id: None,
                 active: true,
                 owns_gil: false,

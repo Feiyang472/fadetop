@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use ratatui::{
     buffer::Buffer,
     crossterm::event::{self, KeyEvent},
@@ -11,17 +9,17 @@ use ratatui::{
 use remoteprocess::Tid;
 
 use crate::{
-    priority::{SpiedRecordQueue, SpiedRecordQueueMap},
+    priority::{SpiedRecordQueue, SpiedRecordQueueMap, ThreadInfo},
     state::{AppState, Focus},
 };
 
-pub struct ThreadSelectionWidget {}
-
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ThreadSelectionState {
-    selected_thread: usize,
-    pub available_threads: HashMap<Tid, Option<String>>,
+    selected_thread_index: usize,
+    pub available_threads: Vec<(Tid, ThreadInfo)>,
 }
+
+pub struct ThreadSelectionWidget {}
 
 impl ThreadSelectionWidget {
     fn get_block(&self, focused: bool) -> Block {
@@ -42,8 +40,8 @@ impl ThreadSelectionState {
     }
 
     fn next_thread(&mut self) {
-        self.selected_thread = self
-            .selected_thread
+        self.selected_thread_index = self
+            .selected_thread_index
             .overflowing_add(1)
             .0
             .checked_rem(self.num_threads())
@@ -52,8 +50,8 @@ impl ThreadSelectionState {
 
     fn prev_thread(&mut self) {
         let num_threads = self.num_threads();
-        self.selected_thread = self
-            .selected_thread
+        self.selected_thread_index = self
+            .selected_thread_index
             .overflowing_add(num_threads.saturating_sub(1))
             .0
             .checked_rem(num_threads)
@@ -72,14 +70,7 @@ impl ThreadSelectionState {
         &self,
         queues: &'a SpiedRecordQueueMap,
     ) -> Option<&'a SpiedRecordQueue> {
-        queues
-            .iter()
-            .nth(self.selected_thread)
-            .map(|(_, queue)| queue)
-    }
-
-    pub(crate) fn nlines(&self, width: u16) -> u16 {
-        (12 * self.num_threads() as u16).div_ceil(width) + 1
+        queues.get(&self.available_threads.get(self.selected_thread_index)?.0)
     }
 
     fn render_tabs(&mut self, area: Rect, buf: &mut Buffer) {
@@ -90,13 +81,17 @@ impl ThreadSelectionState {
         let mut x = area.left();
         let mut n_row = area.top();
         let titles_length = self.num_threads();
-        self.selected_thread = self.selected_thread.min(titles_length - 1);
+        self.selected_thread_index = self.selected_thread_index.min(titles_length.saturating_sub(1));
 
-        for (i, tid) in self.available_threads.keys().enumerate() {
+        for (i, (tid, tinfo)) in self.available_threads.iter().enumerate() {
             let last_title = titles_length - 1 == i;
             let remaining_width = area.right().saturating_sub(x);
 
-            if remaining_width <= 12 {
+            let default_title = format!("{:08x}", tid);
+
+            let title: &str = tinfo.name.as_ref().unwrap_or(&default_title);
+
+            if remaining_width <= title.len() as u16 + 4 {
                 x = area.left();
                 n_row += 1;
             }
@@ -111,10 +106,10 @@ impl ThreadSelectionState {
             let pos = buf.set_line(
                 x,
                 n_row,
-                &Line::from(format!("{:08x}", tid)),
+                &Line::from(title),
                 remaining_width,
             );
-            if i == self.selected_thread {
+            if i == self.selected_thread_index {
                 buf.set_style(
                     Rect {
                         x,

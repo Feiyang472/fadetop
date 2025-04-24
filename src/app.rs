@@ -59,7 +59,7 @@ pub struct FadeTopApp {
     update_period: Duration,
 }
 
-fn send_terminal_event(tx: mpsc::Sender<UpdateEvent>) -> Result<(), Error> {
+fn send_terminal_event(tx: mpsc::SyncSender<UpdateEvent>) -> Result<(), Error> {
     loop {
         tx.send(UpdateEvent::Input(crossterm::event::read()?))?;
     }
@@ -84,7 +84,7 @@ impl FadeTopApp {
 
     fn run_event_senders<S: SamplerOps>(
         &self,
-        sender: mpsc::Sender<UpdateEvent>,
+        sender: mpsc::SyncSender<UpdateEvent>,
         sampler: S,
     ) -> Result<(), Error> {
         // Existing terminal event sender
@@ -124,8 +124,8 @@ impl FadeTopApp {
         let [tab_selector, tab, footer] = Layout::default()
             .direction(Direction::Vertical)
             .constraints(vec![
-                Constraint::Min(self.app_state.thread_selection.nlines(frame.area().width)),
-                Constraint::Fill(50),
+                Constraint::Fill(1),
+                Constraint::Fill(5),
                 Constraint::Length(1),
             ])
             .areas(frame.area());
@@ -146,7 +146,7 @@ impl FadeTopApp {
     ) -> Result<(), Error> {
         // Initialize a Tokio runtime
         let runtime = tokio::runtime::Runtime::new()?;
-        let (event_tx, event_rx) = mpsc::channel::<UpdateEvent>();
+        let (event_tx, event_rx) = mpsc::sync_channel::<UpdateEvent>(2);
 
         // Run the event senders within the Tokio runtime
         runtime.block_on(async {

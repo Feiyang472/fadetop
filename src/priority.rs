@@ -17,12 +17,16 @@ use std::time::Instant;
 
 use crate::ser::parse_duration;
 
+#[derive(Debug, Clone, Default)]
+pub struct ThreadInfo {
+    pub name: Option<String>,
+    pub pid: Pid,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct FrameKey {
     filename: String,
     pub name: String,
-    pub pid: Pid,
-    pub tid: Tid,
 }
 
 impl FrameKey {
@@ -75,40 +79,34 @@ pub struct SpiedRecordQueue {
     pub finished_events: BinaryHeap<FinishedRecord>,
     pub start_ts: Instant,
     pub last_update: Instant,
-    thread_name: Option<String>,
+    pub thread_info: ThreadInfo,
 }
 
 impl SpiedRecordQueue {
-    fn new(thread_name: Option<String>) -> Self {
+    fn new(thread_info: ThreadInfo) -> Self {
         SpiedRecordQueue {
             finished_events: BinaryHeap::new(),
             unfinished_events: vec![],
             start_ts: Instant::now(),
             last_update: Instant::now(),
-            thread_name,
+            thread_info,
         }
     }
 
     pub fn thread_name<'a>(&'a self) -> &'a Option<String> {
-        &self.thread_name
+        &self.thread_info.name
     }
 }
 
 fn event(
-    trace: &StackTrace,
-    frame: &FrameKey,
+    frame_key: FrameKey,
     start: Instant,
     end: Instant,
     depth: usize,
     forget_time: ForgetTime,
 ) -> FinishedRecord {
     FinishedRecord {
-        frame_key: FrameKey {
-            tid: trace.thread_id as Tid,
-            pid: trace.pid,
-            name: frame.name.clone(),
-            filename: frame.filename.clone(),
-        },
+        frame_key,
         start,
         end,
         depth,
@@ -188,6 +186,9 @@ impl SpiedRecordQueueMap {
     pub fn iter(&self) -> Iter<'_, Tid, SpiedRecordQueue> {
         self.map.iter()
     }
+    pub fn get(&self, k: &Tid) -> Option<&SpiedRecordQueue> {
+        self.map.get(k)
+    }
     pub fn len(&self) -> usize {
         self.map.len()
     }
@@ -225,7 +226,12 @@ impl SpiedRecordQueueMap {
         let mut queue = self
             .map
             .remove(&(trace.thread_id as Tid))
-            .unwrap_or_else(|| SpiedRecordQueue::new(trace.thread_name.clone()));
+            .unwrap_or_else(|| {
+                SpiedRecordQueue::new(ThreadInfo {
+                    name: trace.thread_name.clone(),
+                    pid: trace.pid,
+                })
+            });
 
         let mut prev_frames = queue.unfinished_events;
 
@@ -244,8 +250,7 @@ impl SpiedRecordQueueMap {
         for depth in (new_idx..prev_frames.len()).rev() {
             let unfinished = prev_frames.pop().unwrap(); // safe
             queue.finished_events.push(event(
-                trace,
-                &unfinished.frame_key,
+                unfinished.frame_key,
                 unfinished.start,
                 now,
                 depth,
@@ -262,8 +267,6 @@ impl SpiedRecordQueueMap {
                 frame_key: FrameKey {
                     filename: frame.filename.clone(),
                     name: frame.name.clone(),
-                    pid: trace.pid,
-                    tid: trace.thread_id as Tid,
                 },
                 locals: frame.locals.clone(),
             });
@@ -312,8 +315,6 @@ mod tests {
             frame_key: FrameKey {
                 filename: "".to_string(),
                 name: "".to_string(),
-                pid: 0,
-                tid: 0,
             },
             start: now,
             end: now,
