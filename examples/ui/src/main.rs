@@ -120,11 +120,12 @@ impl SamplerOps for MockSampler {
     }
 }
 
-fn main() -> Result<(), Error> {
+#[tokio::main]
+async fn main() -> Result<(), Error> {
     let terminal = ratatui::init();
     let app = FadeTopApp::new(fadetop::config::AppConfig::from_configs()?);
 
-    let result = app.run(terminal, MockSampler {});
+    let result = app.run(terminal, MockSampler {}).await;
     ratatui::restore();
     result
 }
