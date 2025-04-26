@@ -87,10 +87,10 @@ impl ThreadSelectionState {
         let mut last_pid = None;
 
         for (i, tinfo) in self.available_threads.iter().enumerate() {
+            if spans.len() > 0 {
+                spans.push(Span::from(" "));
+            }
             if Some(tinfo.pid) != last_pid {
-                if spans.len() > 0 {
-                    spans.push(Span::from(" "));
-                }
                 spans.push(Span::from(format!("{:08x}❯", tinfo.pid)).bg(Color::Green));
             }
             spans.push(Span::styled(
