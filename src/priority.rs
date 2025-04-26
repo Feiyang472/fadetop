@@ -292,8 +292,8 @@ impl SamplerOps for sampler::Sampler {
         self,
         record_queue_map: Arc<RwLock<SpiedRecordQueueMap>>,
     ) -> Result<(), Error> {
-        for mut sample in self {
-            for trace in sample.traces.iter_mut() {
+        for sample in self {
+            for trace in sample.traces.iter() {
                 record_queue_map
                     .write()
                     .map_err(|_| std::sync::PoisonError::new(trace.thread_id))?
