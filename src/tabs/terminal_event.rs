@@ -1,9 +1,11 @@
 use anyhow::Error;
 use ratatui::{crossterm, crossterm::event};
+use remoteprocess::Tid;
 
 use crate::{
     app::FadeTopApp,
     errors::AppError,
+    priority::SpiedRecordQueue,
     state::{AppState, Focus},
 };
 
@@ -40,14 +42,28 @@ impl AppState {
     }
 
     fn handle_periodic_tick(&mut self) -> Result<(), Error> {
-        let available_threads = self
+        let qmaps = self
             .record_queue_map
             .read()
-            .map_err(|_| std::sync::PoisonError::new(()))?
-            .keys()
-            .map(|k| *k)
-            .collect();
-        self.thread_selection.available_threads = available_threads;
+            .map_err(|_| std::sync::PoisonError::new(()))?;
+
+        self.thread_selection
+            .available_threads
+            .retain(|tinfo| qmaps.contains_key(&tinfo.tid));
+        let mut sorted_qmaps: Vec<(&Tid, &SpiedRecordQueue)> = qmaps.iter().collect();
+        sorted_qmaps.sort_by(|(_, q1), (_, q2)| q1.thread_info.pid.cmp(&q2.thread_info.pid));
+        for (tid, q) in sorted_qmaps {
+            if let None = self
+                .thread_selection
+                .available_threads
+                .iter()
+                .find(|tinfo| tinfo.tid == *tid)
+            {
+                self.thread_selection
+                    .available_threads
+                    .push(q.thread_info.clone());
+            }
+        }
         Ok(())
     }
 }

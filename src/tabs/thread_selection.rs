@@ -4,22 +4,21 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, Borders, StatefulWidget, Widget},
+    widgets::{Block, Borders, Paragraph, StatefulWidget, Widget, Wrap},
 };
-use remoteprocess::Tid;
 
 use crate::{
-    priority::{SpiedRecordQueue, SpiedRecordQueueMap},
+    priority::{SpiedRecordQueue, SpiedRecordQueueMap, ThreadInfo},
     state::{AppState, Focus},
 };
 
-pub struct ThreadSelectionWidget {}
-
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ThreadSelectionState {
-    selected_thread: usize,
-    pub available_threads: Vec<Tid>,
+    selected_thread_index: usize,
+    pub available_threads: Vec<ThreadInfo>,
 }
+
+pub struct ThreadSelectionWidget {}
 
 impl ThreadSelectionWidget {
     fn get_block(&self, focused: bool) -> Block {
@@ -40,8 +39,8 @@ impl ThreadSelectionState {
     }
 
     fn next_thread(&mut self) {
-        self.selected_thread = self
-            .selected_thread
+        self.selected_thread_index = self
+            .selected_thread_index
             .overflowing_add(1)
             .0
             .checked_rem(self.num_threads())
@@ -50,8 +49,8 @@ impl ThreadSelectionState {
 
     fn prev_thread(&mut self) {
         let num_threads = self.num_threads();
-        self.selected_thread = self
-            .selected_thread
+        self.selected_thread_index = self
+            .selected_thread_index
             .overflowing_add(num_threads.saturating_sub(1))
             .0
             .checked_rem(num_threads)
@@ -70,73 +69,47 @@ impl ThreadSelectionState {
         &self,
         queues: &'a SpiedRecordQueueMap,
     ) -> Option<&'a SpiedRecordQueue> {
-        queues
-            .iter()
-            .nth(self.selected_thread)
-            .map(|(_, queue)| queue)
+        queues.get(&self.available_threads.get(self.selected_thread_index)?.tid)
     }
 
-    pub(crate) fn nlines(&self, width: u16) -> u16 {
-        (12 * self.num_threads() as u16).div_ceil(width) + 1
-    }
-
-    fn render_tabs(&self, area: Rect, buf: &mut Buffer) {
+    fn render_tabs(&mut self, area: Rect, buf: &mut Buffer) {
         if area.is_empty() {
             return;
         }
 
-        let mut x = area.left();
-        let mut n_row = area.top();
         let titles_length = self.num_threads();
-        for (i, tid) in self.available_threads.iter().enumerate() {
-            let last_title = titles_length - 1 == i;
-            let remaining_width = area.right().saturating_sub(x);
+        self.selected_thread_index = self
+            .selected_thread_index
+            .min(titles_length.saturating_sub(1));
 
-            if remaining_width <= 12 {
-                x = area.left();
-                n_row += 1;
-            }
+        let mut spans = Vec::new();
 
-            let pos = buf.set_line(x, n_row, &Line::from("["), remaining_width);
-            x = pos.0;
-            let remaining_width = area.right().saturating_sub(x);
-            if remaining_width == 0 {
-                break;
-            }
+        let mut last_pid = None;
 
-            let pos = buf.set_line(
-                x,
-                n_row,
-                &Line::from(format!("{:08x}", tid)),
-                remaining_width,
-            );
-            if i == self.selected_thread {
-                buf.set_style(
-                    Rect {
-                        x,
-                        y: n_row,
-                        width: pos.0.saturating_sub(x),
-                        height: 1,
-                    },
-                    (Color::default(), Color::Blue),
-                );
+        for (i, tinfo) in self.available_threads.iter().enumerate() {
+            if spans.len() > 0 {
+                spans.push(Span::from(" "));
             }
-            x = pos.0;
-            let remaining_width = area.right().saturating_sub(x);
-            if remaining_width == 0 {
-                break;
+            if Some(tinfo.pid) != last_pid {
+                spans.push(Span::from(format!("{:08x}❯", tinfo.pid)).bg(Color::Green));
             }
-
-            let pos = buf.set_line(x, n_row, &Line::from("]"), remaining_width);
-            x = pos.0;
-            let remaining_width = area.right().saturating_sub(x);
-            if remaining_width == 0 || last_title {
-                break;
-            }
-
-            let pos = buf.set_span(x, n_row, &Span::from(", "), remaining_width);
-            x = pos.0;
+            spans.push(Span::styled(
+                match tinfo.name {
+                    Some(ref name) => format!("[{}]", name),
+                    None => format!("[{:08x}]", tinfo.tid),
+                },
+                if i == self.selected_thread_index {
+                    Style::default().bg(Color::default()).fg(Color::Blue).bold()
+                } else {
+                    Style::default()
+                },
+            ));
+            last_pid = Some(tinfo.pid);
         }
+
+        Paragraph::new(Line::from(spans))
+            .wrap(Wrap { trim: true })
+            .render(area, buf);
     }
 }
 

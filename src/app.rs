@@ -1,5 +1,7 @@
+use crate::config::AppConfig;
+
 use crate::{
-    priority::{ForgetRules, SamplerOps},
+    priority::SamplerOps,
     state::AppState,
     tabs::{
         local_variables::LocalVariableWidget, terminal_event::UpdateEvent,
@@ -15,11 +17,10 @@ use ratatui::{
     text::Line,
     widgets::Widget,
 };
-use std::{
-    sync::{Arc, mpsc},
-    thread,
-    time::Duration,
-};
+
+use std::env;
+use std::time::Duration;
+use std::{sync::Arc, thread};
 
 #[derive(Debug, Clone, Copy)]
 struct Footer {}
@@ -37,36 +38,50 @@ impl Widget for Footer {
     }
 }
 
+impl AppConfig {
+    pub fn from_configs() -> Result<Self, Error> {
+        let config_file = env::var("FADETOP_CONFIG").unwrap_or("fadetop_config.toml".to_string());
+
+        Ok(config::Config::builder()
+            .add_source(config::File::with_name(&config_file).required(false))
+            .add_source(config::Environment::with_prefix("FADETOP"))
+            .build()?
+            .try_deserialize::<AppConfig>()?)
+    }
+}
+
 #[derive(Debug)]
 pub struct FadeTopApp {
     pub app_state: AppState,
+    update_period: Duration,
 }
 
-fn send_terminal_event(tx: mpsc::Sender<UpdateEvent>) -> Result<(), Error> {
+fn send_terminal_event(tx: tokio::sync::mpsc::Sender<UpdateEvent>) -> Result<(), Error> {
     loop {
-        tx.send(UpdateEvent::Input(crossterm::event::read()?))?;
+        tx.blocking_send(UpdateEvent::Input(crossterm::event::read()?))?;
     }
 }
 
 impl FadeTopApp {
-    pub fn new() -> Self {
-        Self {
-            app_state: AppState::new(),
-        }
-    }
-
-    pub fn with_rules(self, rules: Vec<ForgetRules>) -> Result<Self, Error> {
-        self.app_state
+    pub fn new(configs: AppConfig) -> Self {
+        let mut app_state = AppState::new();
+        app_state
             .record_queue_map
             .write()
-            .map_err(|_| std::sync::PoisonError::new(()))?
-            .with_rules(rules);
-        Ok(self)
+            .unwrap()
+            .with_rules(configs.rules);
+
+        app_state.viewport_bound.width = configs.window_width;
+
+        Self {
+            app_state,
+            update_period: configs.update_period,
+        }
     }
 
     fn run_event_senders<S: SamplerOps>(
         &self,
-        sender: mpsc::Sender<UpdateEvent>,
+        sender: tokio::sync::mpsc::Sender<UpdateEvent>,
         sampler: S,
     ) -> Result<(), Error> {
         // Existing terminal event sender
@@ -85,13 +100,15 @@ impl FadeTopApp {
             }
         });
 
+        let update_period = self.update_period;
+
         // New async event sender
         let async_sender = sender.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(tokio::time::Duration::from_millis(10));
+            let mut interval = tokio::time::interval(update_period);
             loop {
                 interval.tick().await;
-                if async_sender.send(UpdateEvent::Periodic).is_err() {
+                if async_sender.send(UpdateEvent::Periodic).await.is_err() {
                     break;
                 }
             }
@@ -104,8 +121,8 @@ impl FadeTopApp {
         let [tab_selector, tab, footer] = Layout::default()
             .direction(Direction::Vertical)
             .constraints(vec![
-                Constraint::Min(self.app_state.thread_selection.nlines(frame.area().width)),
-                Constraint::Fill(50),
+                Constraint::Fill(1),
+                Constraint::Fill(5),
                 Constraint::Length(1),
             ])
             .areas(frame.area());
@@ -119,30 +136,24 @@ impl FadeTopApp {
         frame.render_widget(Footer {}, footer);
     }
 
-    pub fn run<S: SamplerOps>(
+    pub async fn run<S: SamplerOps>(
         mut self,
         mut terminal: DefaultTerminal,
         sampler: S,
     ) -> Result<(), Error> {
-        // Initialize a Tokio runtime
-        let runtime = tokio::runtime::Runtime::new()?;
-        let (event_tx, event_rx) = mpsc::channel::<UpdateEvent>();
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<UpdateEvent>(2);
 
-        // Run the event senders within the Tokio runtime
-        runtime.block_on(async {
-            self.run_event_senders(event_tx, sampler)?;
-            Ok::<(), Error>(())
-        })?;
+        self.run_event_senders(event_tx, sampler)?;
 
         while self.app_state.is_running() {
             terminal.draw(|frame| self.render_full_app(frame))?;
-            event_rx.recv()?.update_state(&mut self)?;
+            match event_rx.recv().await {
+                None => {
+                    break;
+                }
+                Some(event) => event.update_state(&mut self)?,
+            };
         }
         Ok(())
-    }
-
-    pub fn with_viewport_window(mut self, width: Duration) -> Self {
-        self.app_state.viewport_bound.width = width;
-        self
     }
 }

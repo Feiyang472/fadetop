@@ -17,17 +17,26 @@ use std::time::Instant;
 
 use crate::ser::parse_duration;
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FrameKey {
-    pub filename: String,
-    pub name: String,
+#[derive(Debug, Clone, Default)]
+pub struct ThreadInfo {
+    pub name: Option<String>,
     pub pid: Pid,
     pub tid: Tid,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FrameKey {
+    filename: String,
+    pub name: String,
 }
 
 impl FrameKey {
     fn should_merge(&self, b: &Frame) -> bool {
         self.name == b.name && self.filename == b.filename
+    }
+
+    pub fn fqn(&self) -> String {
+        format!("{}::{}", self.filename, self.name)
     }
 }
 
@@ -71,34 +80,34 @@ pub struct SpiedRecordQueue {
     pub finished_events: BinaryHeap<FinishedRecord>,
     pub start_ts: Instant,
     pub last_update: Instant,
+    pub thread_info: ThreadInfo,
 }
 
-impl Default for SpiedRecordQueue {
-    fn default() -> Self {
+impl SpiedRecordQueue {
+    fn new(thread_info: ThreadInfo) -> Self {
         SpiedRecordQueue {
             finished_events: BinaryHeap::new(),
             unfinished_events: vec![],
             start_ts: Instant::now(),
             last_update: Instant::now(),
+            thread_info,
         }
+    }
+
+    pub fn thread_name<'a>(&'a self) -> &'a Option<String> {
+        &self.thread_info.name
     }
 }
 
 fn event(
-    trace: &StackTrace,
-    frame: &FrameKey,
+    frame_key: FrameKey,
     start: Instant,
     end: Instant,
     depth: usize,
     forget_time: ForgetTime,
 ) -> FinishedRecord {
     FinishedRecord {
-        frame_key: FrameKey {
-            tid: trace.thread_id as Tid,
-            pid: trace.pid,
-            name: frame.name.clone(),
-            filename: frame.filename.clone(),
-        },
+        frame_key,
         start,
         end,
         depth,
@@ -129,7 +138,7 @@ impl PartialOrd for ForgetTime {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Clone)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ForgetRules {
     LastedLessThan(#[serde(deserialize_with = "parse_duration")] Duration),
@@ -157,6 +166,14 @@ impl ForgetRules {
     }
 }
 
+fn forget_time(rules: &Vec<ForgetRules>, start: Instant, end: Instant) -> ForgetTime {
+    rules
+        .iter()
+        .map(|rule| rule.pop_time(start, end))
+        .min()
+        .unwrap_or(ForgetTime::Never)
+}
+
 #[derive(Debug, Default)]
 pub struct SpiedRecordQueueMap {
     map: HashMap<Tid, SpiedRecordQueue>,
@@ -170,20 +187,18 @@ impl SpiedRecordQueueMap {
     pub fn iter(&self) -> Iter<'_, Tid, SpiedRecordQueue> {
         self.map.iter()
     }
+    pub fn get(&self, k: &Tid) -> Option<&SpiedRecordQueue> {
+        self.map.get(k)
+    }
     pub fn len(&self) -> usize {
         self.map.len()
+    }
+    pub fn contains_key(&self, k: &Tid) -> bool {
+        self.map.contains_key(k)
     }
 
     pub fn with_rules(&mut self, rules: Vec<ForgetRules>) {
         self.rules = rules;
-    }
-
-    fn forget_time(&self, start: Instant, end: Instant) -> ForgetTime {
-        self.rules
-            .iter()
-            .map(|rule| rule.pop_time(start, end))
-            .min()
-            .unwrap_or(ForgetTime::Never)
     }
 
     pub fn increment(&mut self, trace: &StackTrace) {
@@ -203,12 +218,22 @@ impl SpiedRecordQueueMap {
                 }
             }
             !queue.unfinished_events.is_empty()
+                && match forget_time(&self.rules, queue.start_ts, queue.last_update) {
+                    ForgetTime::When(when) => when > now,
+                    ForgetTime::Never => true,
+                }
         });
 
         let mut queue = self
             .map
             .remove(&(trace.thread_id as Tid))
-            .unwrap_or_default();
+            .unwrap_or_else(|| {
+                SpiedRecordQueue::new(ThreadInfo {
+                    name: trace.thread_name.clone(),
+                    pid: trace.pid,
+                    tid: trace.thread_id as Tid,
+                })
+            });
 
         let mut prev_frames = queue.unfinished_events;
 
@@ -227,12 +252,11 @@ impl SpiedRecordQueueMap {
         for depth in (new_idx..prev_frames.len()).rev() {
             let unfinished = prev_frames.pop().unwrap(); // safe
             queue.finished_events.push(event(
-                trace,
-                &unfinished.frame_key,
+                unfinished.frame_key,
                 unfinished.start,
                 now,
                 depth,
-                self.forget_time(unfinished.start, now),
+                forget_time(&self.rules, unfinished.start, now),
             ));
         }
 
@@ -245,8 +269,6 @@ impl SpiedRecordQueueMap {
                 frame_key: FrameKey {
                     filename: frame.filename.clone(),
                     name: frame.name.clone(),
-                    pid: trace.pid,
-                    tid: trace.thread_id as Tid,
                 },
                 locals: frame.locals.clone(),
             });
@@ -270,38 +292,11 @@ impl SamplerOps for sampler::Sampler {
         self,
         record_queue_map: Arc<RwLock<SpiedRecordQueueMap>>,
     ) -> Result<(), Error> {
-        for mut sample in self {
-            for trace in sample.traces.iter_mut() {
-                let threadid = trace.format_threadid();
-                let thread_fmt = if let Some(thread_name) = &trace.thread_name {
-                    format!("thread ({}): {}", threadid, thread_name)
-                } else {
-                    format!("thread ({})", threadid)
-                };
-                trace.frames.push(Frame {
-                    name: thread_fmt,
-                    filename: String::from(""),
-                    module: None,
-                    short_filename: None,
-                    line: 0,
-                    locals: None,
-                    is_entry: true,
-                });
-
-                if let Some(process_info) = trace.process_info.as_ref() {
-                    trace.frames.push(process_info.to_frame());
-                    let mut parent = process_info.parent.as_ref();
-                    while parent.is_some() {
-                        if let Some(process_info) = parent {
-                            trace.frames.push(process_info.to_frame());
-                            parent = process_info.parent.as_ref();
-                        }
-                    }
-                }
-
+        for sample in self {
+            for trace in sample.traces.iter() {
                 record_queue_map
                     .write()
-                    .map_err(|_| std::sync::PoisonError::new(threadid))?
+                    .map_err(|_| std::sync::PoisonError::new(trace.thread_id))?
                     .increment(trace);
             }
         }
@@ -322,8 +317,6 @@ mod tests {
             frame_key: FrameKey {
                 filename: "".to_string(),
                 name: "".to_string(),
-                pid: 0,
-                tid: 0,
             },
             start: now,
             end: now,
