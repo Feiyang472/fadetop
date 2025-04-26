@@ -11,7 +11,7 @@ struct Args {
     pid: Pid,
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Error> {
     let configs = AppConfig::from_configs()?;
 

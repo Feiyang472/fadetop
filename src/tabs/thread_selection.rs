@@ -4,7 +4,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, Borders, StatefulWidget, Widget},
+    widgets::{Block, Borders, Paragraph, StatefulWidget, Widget, Wrap},
 };
 
 use crate::{
@@ -77,61 +77,39 @@ impl ThreadSelectionState {
             return;
         }
 
-        let mut x = area.left();
-        let mut n_row = area.top();
         let titles_length = self.num_threads();
         self.selected_thread_index = self
             .selected_thread_index
             .min(titles_length.saturating_sub(1));
 
+        let mut spans = Vec::new();
+
+        let mut last_pid = None;
+
         for (i, tinfo) in self.available_threads.iter().enumerate() {
-            let last_title = titles_length - 1 == i;
-            let remaining_width = area.right().saturating_sub(x);
-
-            let default_title = format!("{:08x}", tinfo.tid);
-
-            let title: &str = tinfo.name.as_ref().unwrap_or(&default_title);
-
-            if remaining_width <= title.len() as u16 + 4 {
-                x = area.left();
-                n_row += 1;
+            if Some(tinfo.pid) != last_pid {
+                if spans.len() > 0 {
+                    spans.push(Span::from(" "));
+                }
+                spans.push(Span::from(format!("{:08x}❯", tinfo.pid)).bg(Color::Green));
             }
-
-            let pos = buf.set_line(x, n_row, &Line::from("["), remaining_width);
-            x = pos.0;
-            let remaining_width = area.right().saturating_sub(x);
-            if remaining_width == 0 {
-                break;
-            }
-
-            let pos = buf.set_line(x, n_row, &Line::from(title), remaining_width);
-            if i == self.selected_thread_index {
-                buf.set_style(
-                    Rect {
-                        x,
-                        y: n_row,
-                        width: pos.0.saturating_sub(x),
-                        height: 1,
-                    },
-                    (Color::default(), Color::Blue),
-                );
-            }
-            x = pos.0;
-            let remaining_width = area.right().saturating_sub(x);
-            if remaining_width == 0 {
-                break;
-            }
-
-            let pos = buf.set_line(x, n_row, &Line::from("]"), remaining_width);
-            x = pos.0;
-            let remaining_width = area.right().saturating_sub(x);
-            if remaining_width == 0 || last_title {
-                break;
-            }
-
-            let pos = buf.set_span(x, n_row, &Span::from(", "), remaining_width);
-            x = pos.0;
+            spans.push(Span::styled(
+                match tinfo.name {
+                    Some(ref name) => format!("[{}]", name),
+                    None => format!("[{:08x}]", tinfo.tid),
+                },
+                if i == self.selected_thread_index {
+                    Style::default().bg(Color::default()).fg(Color::Blue).bold()
+                } else {
+                    Style::default()
+                },
+            ));
+            last_pid = Some(tinfo.pid);
         }
+
+        Paragraph::new(Line::from(spans))
+            .wrap(Wrap { trim: true })
+            .render(area, buf);
     }
 }
 

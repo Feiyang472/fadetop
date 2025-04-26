@@ -4,6 +4,7 @@ use ratatui::{crossterm, crossterm::event};
 use crate::{
     app::FadeTopApp,
     errors::AppError,
+    priority::SpiedRecordQueue,
     state::{AppState, Focus},
 };
 
@@ -48,12 +49,14 @@ impl AppState {
         self.thread_selection
             .available_threads
             .retain(|tinfo| qmaps.contains_key(&tinfo.tid));
-        for (k, q) in qmaps.iter() {
+        let mut sorted_qmaps: Vec<(&i32, &SpiedRecordQueue)> = qmaps.iter().collect();
+        sorted_qmaps.sort_by(|(_, q1), (_, q2)| q1.thread_info.pid.cmp(&q2.thread_info.pid));
+        for (tid, q) in sorted_qmaps {
             if let None = self
                 .thread_selection
                 .available_threads
                 .iter()
-                .find(|tinfo| tinfo.tid == *k)
+                .find(|tinfo| tinfo.tid == *tid)
             {
                 self.thread_selection
                     .available_threads
