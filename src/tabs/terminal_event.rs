@@ -1,5 +1,6 @@
 use anyhow::Error;
 use ratatui::{crossterm, crossterm::event};
+use remoteprocess::Tid;
 
 use crate::{
     app::FadeTopApp,
@@ -49,7 +50,7 @@ impl AppState {
         self.thread_selection
             .available_threads
             .retain(|tinfo| qmaps.contains_key(&tinfo.tid));
-        let mut sorted_qmaps: Vec<(&i32, &SpiedRecordQueue)> = qmaps.iter().collect();
+        let mut sorted_qmaps: Vec<(&Tid, &SpiedRecordQueue)> = qmaps.iter().collect();
         sorted_qmaps.sort_by(|(_, q1), (_, q2)| q1.thread_info.pid.cmp(&q2.thread_info.pid));
         for (tid, q) in sorted_qmaps {
             if let None = self
