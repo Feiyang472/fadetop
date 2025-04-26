@@ -11,7 +11,8 @@ struct Args {
     pid: Pid,
 }
 
-fn main() -> Result<(), Error> {
+#[tokio::main]
+async fn main() -> Result<(), Error> {
     let configs = AppConfig::from_configs()?;
 
     let cmd =
@@ -22,20 +23,22 @@ fn main() -> Result<(), Error> {
     let terminal = ratatui::init();
     let app = FadeTopApp::new(configs.clone());
 
-    let result = app.run(
-        terminal,
-        py_spy::sampler::Sampler::new(
-            args.pid,
-            &py_spy::Config {
-                blocking: py_spy::config::LockingStrategy::NonBlocking,
-                sampling_rate: configs.sampling_rate,
-                subprocesses: configs.subprocesses,
-                native: configs.native,
-                dump_locals: configs.dump_locals,
-                ..Default::default()
-            },
-        )?,
-    );
+    let result = app
+        .run(
+            terminal,
+            py_spy::sampler::Sampler::new(
+                args.pid,
+                &py_spy::Config {
+                    blocking: py_spy::config::LockingStrategy::NonBlocking,
+                    sampling_rate: configs.sampling_rate,
+                    subprocesses: configs.subprocesses,
+                    native: configs.native,
+                    dump_locals: configs.dump_locals,
+                    ..Default::default()
+                },
+            )?,
+        )
+        .await;
     ratatui::restore();
     result
 }

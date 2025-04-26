@@ -2340,6 +2340,7 @@ dependencies = [
  "fadetop",
  "py-spy",
  "ratatui",
+ "tokio",
 ]
 
 [[package]]

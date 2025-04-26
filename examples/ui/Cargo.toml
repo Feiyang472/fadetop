@@ -12,3 +12,4 @@ py-spy = { workspace = true }
 color-eyre = "0.6.3"
 fadetop = { path = "../.." }
 anyhow = { workspace = true }
+tokio = { workspace = true }

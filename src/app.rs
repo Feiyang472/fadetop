@@ -20,10 +20,7 @@ use ratatui::{
 
 use std::env;
 use std::time::Duration;
-use std::{
-    sync::{Arc, mpsc},
-    thread,
-};
+use std::{sync::Arc, thread};
 
 #[derive(Debug, Clone, Copy)]
 struct Footer {}
@@ -59,9 +56,9 @@ pub struct FadeTopApp {
     update_period: Duration,
 }
 
-fn send_terminal_event(tx: mpsc::SyncSender<UpdateEvent>) -> Result<(), Error> {
+fn send_terminal_event(tx: tokio::sync::mpsc::Sender<UpdateEvent>) -> Result<(), Error> {
     loop {
-        tx.send(UpdateEvent::Input(crossterm::event::read()?))?;
+        tx.blocking_send(UpdateEvent::Input(crossterm::event::read()?))?;
     }
 }
 
@@ -84,7 +81,7 @@ impl FadeTopApp {
 
     fn run_event_senders<S: SamplerOps>(
         &self,
-        sender: mpsc::SyncSender<UpdateEvent>,
+        sender: tokio::sync::mpsc::Sender<UpdateEvent>,
         sampler: S,
     ) -> Result<(), Error> {
         // Existing terminal event sender
@@ -111,7 +108,7 @@ impl FadeTopApp {
             let mut interval = tokio::time::interval(update_period);
             loop {
                 interval.tick().await;
-                if async_sender.send(UpdateEvent::Periodic).is_err() {
+                if async_sender.send(UpdateEvent::Periodic).await.is_err() {
                     break;
                 }
             }
@@ -139,24 +136,23 @@ impl FadeTopApp {
         frame.render_widget(Footer {}, footer);
     }
 
-    pub fn run<S: SamplerOps>(
+    pub async fn run<S: SamplerOps>(
         mut self,
         mut terminal: DefaultTerminal,
         sampler: S,
     ) -> Result<(), Error> {
-        // Initialize a Tokio runtime
-        let runtime = tokio::runtime::Runtime::new()?;
-        let (event_tx, event_rx) = mpsc::sync_channel::<UpdateEvent>(2);
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<UpdateEvent>(2);
 
-        // Run the event senders within the Tokio runtime
-        runtime.block_on(async {
-            self.run_event_senders(event_tx, sampler)?;
-            Ok::<(), Error>(())
-        })?;
+        self.run_event_senders(event_tx, sampler)?;
 
         while self.app_state.is_running() {
             terminal.draw(|frame| self.render_full_app(frame))?;
-            event_rx.recv()?.update_state(&mut self)?;
+            match event_rx.recv().await {
+                None => {
+                    break;
+                }
+                Some(event) => event.update_state(&mut self)?,
+            };
         }
         Ok(())
     }
