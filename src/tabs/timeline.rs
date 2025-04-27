@@ -163,16 +163,15 @@ impl StatefulWidget for TimelineWidget {
                         && record.end >= visible_start
                         && record.depth < inner.height as usize
                     {
-                        render_event(
-                            buf,
-                            inner,
-                            (record.start - visible_start).as_micros() as usize,
-                            (record.end - visible_start).as_micros() as usize,
-                            record.depth as u16,
-                            &record.frame_key.name,
-                            window_width.as_micros() as usize,
-                            get_color_for_name(&record.frame_key.fqn()),
-                        );
+                        FrameLine {
+                            start: (record.start - visible_start).as_micros() as usize,
+                            end: (record.end - visible_start).as_micros() as usize,
+                            depth: record.depth as u16,
+                            name: &record.frame_key.name,
+                            window_width: window_width.as_micros() as usize,
+                            color: get_color_for_name(&record.frame_key.fqn()),
+                        }
+                        .render_event(buf, inner);
                     }
                 });
 
@@ -182,20 +181,19 @@ impl StatefulWidget for TimelineWidget {
                     .take(inner.height as usize)
                     .enumerate()
                     .for_each(|(depth, record)| {
-                        render_event(
-                            buf,
-                            inner,
-                            (record.start - visible_start).as_micros() as usize,
-                            window_width.as_micros() as usize,
-                            depth as u16,
-                            &record.frame_key.name,
-                            window_width.as_micros() as usize,
-                            Color::Rgb(
+                        FrameLine {
+                            start: (record.start - visible_start).as_micros() as usize,
+                            end: window_width.as_micros() as usize,
+                            depth: depth as u16,
+                            name: &record.frame_key.name,
+                            window_width: window_width.as_micros() as usize,
+                            color: Color::Rgb(
                                 0,
                                 150 - ((depth % 8 * 16) as u8),
                                 200 - ((depth % 8 * 16) as u8),
                             ),
-                        );
+                        }
+                        .render_event(buf, inner);
                     });
 
                 buf.cell_mut((
@@ -241,44 +239,45 @@ fn get_color_for_name(name: &str) -> Color {
     )
 }
 
-// Reusable function to render an event
-fn render_event(
-    buf: &mut Buffer,
-    inner: Rect,
+struct FrameLine<'a> {
     start: usize,
     end: usize,
     depth: u16,
-    name: &str,
+    name: &'a str,
     window_width: usize,
     color: Color,
-) {
-    if window_width == 0 {
-        return;
-    }
+}
 
-    let tab_width = inner.width as usize;
+impl FrameLine<'_> {
+    fn render_event(self, buf: &mut Buffer, inner: Rect) {
+        if self.window_width == 0 {
+            return;
+        }
 
-    let relative_start = (start * tab_width) / window_width;
-    let relative_end = ((end * tab_width).div_ceil(window_width)).min(tab_width);
+        let tab_width = inner.width as usize;
 
-    let x_start = inner.left() + relative_start as u16;
-    let x_end = inner.left() + relative_end as u16;
+        let relative_start = (self.start * tab_width) / self.window_width;
+        let relative_end = ((self.end * tab_width).div_ceil(self.window_width)).min(tab_width);
 
-    if x_end > x_start + 2 {
-        // block width is unstable due to rounding
-        let block_width = relative_end - relative_start;
+        let x_start = inner.left() + relative_start as u16;
+        let x_end = inner.left() + relative_end as u16;
 
-        let padded_string = format!(
-            "{:^block_width$}",
-            name.chars().take(block_width).collect::<String>(),
-            block_width = block_width
-        );
+        if x_end > x_start + 2 {
+            // block width is unstable due to rounding
+            let block_width = relative_end - relative_start;
 
-        buf.set_string(
-            x_start,
-            inner.top() + depth,
-            padded_string,
-            Style::default().fg(Color::White).bg(color),
-        );
+            let padded_string = format!(
+                "{:^block_width$}",
+                self.name.chars().take(block_width).collect::<String>(),
+                block_width = block_width
+            );
+
+            buf.set_string(
+                x_start,
+                inner.top() + self.depth,
+                padded_string,
+                Style::default().fg(Color::White).bg(self.color),
+            );
+        }
     }
 }
