@@ -158,20 +158,19 @@ impl StatefulWidget for TimelineWidget {
                 let inner = block.inner(area);
                 block.render(area, buf);
 
+                let mut lines = Vec::new();
                 queue.finished_events.iter().for_each(|record| {
                     if record.start <= visible_end
                         && record.end >= visible_start
                         && record.depth < inner.height as usize
                     {
-                        FrameLine {
-                            start: (record.start - visible_start).as_micros() as usize,
-                            end: (record.end - visible_start).as_micros() as usize,
+                        lines.push(FrameLine {
+                            start: record.start,
+                            end: Some(record.end),
                             depth: record.depth as u16,
                             name: &record.frame_key.name,
-                            window_width: window_width.as_micros() as usize,
-                            color: get_color_for_name(&record.frame_key.fqn()),
-                        }
-                        .render_event(buf, inner);
+                            running: false,
+                        })
                     }
                 });
 
@@ -181,20 +180,18 @@ impl StatefulWidget for TimelineWidget {
                     .take(inner.height as usize)
                     .enumerate()
                     .for_each(|(depth, record)| {
-                        FrameLine {
-                            start: (record.start - visible_start).as_micros() as usize,
-                            end: window_width.as_micros() as usize,
+                        lines.push(FrameLine {
+                            start: record.start,
+                            end: None,
                             depth: depth as u16,
                             name: &record.frame_key.name,
-                            window_width: window_width.as_micros() as usize,
-                            color: Color::Rgb(
-                                0,
-                                150 - ((depth % 8 * 16) as u8),
-                                200 - ((depth % 8 * 16) as u8),
-                            ),
-                        }
-                        .render_event(buf, inner);
+                            running: true,
+                        });
                     });
+
+                for line in lines {
+                    line.render(inner, buf, window_width.as_micros() as usize, visible_start);
+                }
 
                 buf.cell_mut((
                     inner.right(),
@@ -240,24 +237,41 @@ fn get_color_for_name(name: &str) -> Color {
 }
 
 struct FrameLine<'a> {
-    start: usize,
-    end: usize,
+    start: Instant,
+    end: Option<Instant>,
     depth: u16,
     name: &'a str,
-    window_width: usize,
-    color: Color,
+    running: bool,
 }
 
 impl FrameLine<'_> {
-    fn render_event(self, buf: &mut Buffer, inner: Rect) {
-        if self.window_width == 0 {
+    fn color(&self) -> Color {
+        if self.running {
+            return Color::Rgb(
+                0,
+                150 - ((self.depth % 8 * 16) as u8),
+                200 - ((self.depth % 8 * 16) as u8),
+            );
+        } else {
+            return get_color_for_name(&self.name);
+        }
+    }
+
+    fn render(self, inner: Rect, buf: &mut Buffer, window_width: usize, visible_start: Instant) {
+        if window_width == 0 {
             return;
         }
 
         let tab_width = inner.width as usize;
 
-        let relative_start = (self.start * tab_width) / self.window_width;
-        let relative_end = ((self.end * tab_width).div_ceil(self.window_width)).min(tab_width);
+        let relative_start =
+            ((self.start - visible_start).as_micros() as usize * tab_width) / window_width;
+        let relative_end = match self.end {
+            Some(end) => ((end - visible_start).as_micros() as usize * tab_width)
+                .div_ceil(window_width)
+                .min(tab_width),
+            None => window_width,
+        };
 
         let x_start = inner.left() + relative_start as u16;
         let x_end = inner.left() + relative_end as u16;
@@ -276,7 +290,7 @@ impl FrameLine<'_> {
                 x_start,
                 inner.top() + self.depth,
                 padded_string,
-                Style::default().fg(Color::White).bg(self.color),
+                Style::default().fg(Color::White).bg(self.color()),
             );
         }
     }
