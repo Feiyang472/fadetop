@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use py_spy::config::LockingStrategy;
 use serde::{Deserialize, Deserializer};
 
 pub fn parse_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
@@ -20,6 +21,22 @@ where
         _ => Err(serde::de::Error::custom(format!(
             "invalid duration unit '{}'",
             unit
+        ))),
+    }
+}
+
+pub fn parse_locking_strategy<'de, D>(deserializer: D) -> Result<LockingStrategy, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let s: String = Deserialize::deserialize(deserializer)?;
+
+    match s.as_ref() {
+        "Lock" => Ok(LockingStrategy::Lock),
+        "NonBlocking" => Ok(LockingStrategy::NonBlocking),
+        _ => Err(serde::de::Error::custom(format!(
+            "invalid locking strategy '{}'",
+            s
         ))),
     }
 }

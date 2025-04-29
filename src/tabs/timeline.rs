@@ -169,7 +169,6 @@ impl StatefulWidget for TimelineWidget {
                             end: Some(record.end),
                             depth: record.depth as u16,
                             name: &record.frame_key.name,
-                            running: false,
                         })
                     }
                 });
@@ -185,7 +184,6 @@ impl StatefulWidget for TimelineWidget {
                             end: None,
                             depth: depth as u16,
                             name: &record.frame_key.name,
-                            running: true,
                         });
                     });
 
@@ -205,55 +203,50 @@ impl StatefulWidget for TimelineWidget {
     }
 }
 
-fn get_color_for_name(name: &str) -> Color {
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for byte in name.bytes() {
-        hash ^= byte as u64;
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-
-    let hue = (hash % 360) as f32;
-    let saturation = 0.35;
-    let lightness = 0.6;
-
-    let c = (1.0_f32 - (2.0_f32 * lightness - 1.0_f32).abs()) * saturation;
-    let h = hue / 60.0;
-    let x = c * (1.0 - ((h % 2.0) - 1.0).abs());
-    let m = lightness - c / 2.0;
-
-    let (r, g, b) = match h as u32 {
-        0 => (c, x, 0.0),
-        1 => (x, c, 0.0),
-        2 => (0.0, c, x),
-        3 => (0.0, x, c),
-        4 => (x, 0.0, c),
-        _ => (c, 0.0, x),
-    };
-    Color::Rgb(
-        ((r + m) * 255.0) as u8,
-        ((g + m) * 255.0) as u8,
-        ((b + m) * 255.0) as u8,
-    )
-}
-
 struct FrameLine<'a> {
     start: Instant,
     end: Option<Instant>,
     depth: u16,
     name: &'a str,
-    running: bool,
 }
 
 impl FrameLine<'_> {
     fn color(&self) -> Color {
-        if self.running {
+        if let None = self.end {
             return Color::Rgb(
                 0,
                 150 - ((self.depth % 8 * 16) as u8),
                 200 - ((self.depth % 8 * 16) as u8),
             );
         } else {
-            return get_color_for_name(&self.name);
+            let mut hash: u64 = 0xcbf29ce484222325;
+            for byte in self.name.bytes() {
+                hash ^= byte as u64;
+                hash = hash.wrapping_mul(0x100000001b3);
+            }
+
+            let hue = (hash % 360) as f32;
+            let saturation = 0.35;
+            let lightness = 0.6;
+
+            let c = (1.0_f32 - (2.0_f32 * lightness - 1.0_f32).abs()) * saturation;
+            let h = hue / 60.0;
+            let x = c * (1.0 - ((h % 2.0) - 1.0).abs());
+            let m = lightness - c / 2.0;
+
+            let (r, g, b) = match h as u32 {
+                0 => (c, x, 0.0),
+                1 => (x, c, 0.0),
+                2 => (0.0, c, x),
+                3 => (0.0, x, c),
+                4 => (x, 0.0, c),
+                _ => (c, 0.0, x),
+            };
+            Color::Rgb(
+                ((r + m) * 255.0) as u8,
+                ((g + m) * 255.0) as u8,
+                ((b + m) * 255.0) as u8,
+            )
         }
     }
 
@@ -270,7 +263,7 @@ impl FrameLine<'_> {
             Some(end) => ((end - visible_start).as_micros() as usize * tab_width)
                 .div_ceil(window_width)
                 .min(tab_width),
-            None => window_width,
+            None => inner.width as usize,
         };
 
         let x_start = inner.left() + relative_start as u16;
