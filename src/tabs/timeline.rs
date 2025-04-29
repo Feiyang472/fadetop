@@ -188,7 +188,7 @@ impl StatefulWidget for TimelineWidget {
                     });
 
                 for line in lines {
-                    line.render(inner, buf, window_width.as_micros() as usize, visible_start);
+                    line.render_line(inner, buf, window_width, visible_start);
                 }
 
                 buf.cell_mut((
@@ -250,28 +250,31 @@ impl FrameLine<'_> {
         }
     }
 
-    fn render(self, inner: Rect, buf: &mut Buffer, window_width: usize, visible_start: Instant) {
-        if window_width == 0 {
+    fn render_line(
+        self,
+        inner: Rect,
+        buf: &mut Buffer,
+        window_width: Duration,
+        visible_start: Instant,
+    ) {
+        if window_width.is_zero() {
             return;
         }
 
-        let tab_width = inner.width as usize;
+        let tab_width = inner.width as f64;
 
         let relative_start =
-            ((self.start - visible_start).as_micros() as usize * tab_width) / window_width;
+            (self.start - visible_start).div_duration_f64(window_width) * tab_width;
         let relative_end = match self.end {
-            Some(end) => ((end - visible_start).as_micros() as usize * tab_width)
-                .div_ceil(window_width)
-                .min(tab_width),
-            None => inner.width as usize,
+            Some(end) => {
+                ((end - visible_start).div_duration_f64(window_width) * tab_width).min(tab_width)
+            }
+            None => tab_width,
         };
 
-        let x_start = inner.left() + relative_start as u16;
-        let x_end = inner.left() + relative_end as u16;
-
-        if x_end > x_start + 2 {
-            // block width is unstable due to rounding
-            let block_width = relative_end - relative_start;
+        if relative_end > relative_start + 1.0 {
+            // choosing line continuity over translational invariance of block width
+            let block_width = relative_end as usize - relative_start as usize;
 
             let padded_string = format!(
                 "{:^block_width$}",
@@ -280,7 +283,7 @@ impl FrameLine<'_> {
             );
 
             buf.set_string(
-                x_start,
+                inner.left() + relative_start as u16,
                 inner.top() + self.depth,
                 padded_string,
                 Style::default().fg(Color::White).bg(self.color()),
