@@ -6,30 +6,33 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, StatefulWidget, Widget, Wrap},
 };
+use remoteprocess::Tid;
 
-use crate::{
-    priority::{SpiedRecordQueue, SpiedRecordQueueMap, ThreadInfo},
-    state::{AppState, Focus},
-};
+use crate::priority::{SpiedRecordQueue, SpiedRecordQueueMap, ThreadInfo};
+
+use super::Blocked;
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ThreadSelectionState {
+pub struct ThreadSelectionState {
     selected_thread_index: usize,
-    pub available_threads: Vec<ThreadInfo>,
+    available_threads: Vec<ThreadInfo>,
 }
 
 pub struct ThreadSelectionWidget {}
 
 impl ThreadSelectionWidget {
-    fn get_block(&self, focused: bool) -> Block {
-        Block::new()
-            .borders(Borders::TOP)
-            .title("Threads")
-            .border_style(if focused {
-                Style::new().blue().on_white().bold().italic()
-            } else {
-                Style::default()
-            })
+    pub fn blocked<'b>(self, focused: bool) -> Blocked<'b, ThreadSelectionWidget> {
+        Blocked {
+            sub: self,
+            block: Block::new()
+                .borders(Borders::TOP)
+                .title("Threads")
+                .border_style(if focused {
+                    Style::new().blue().on_white().bold().italic()
+                } else {
+                    Style::default()
+                }),
+        }
     }
 }
 
@@ -111,14 +114,27 @@ impl ThreadSelectionState {
             .wrap(Wrap { trim: true })
             .render(area, buf);
     }
+
+    pub fn update_threads(&mut self, qmaps: &SpiedRecordQueueMap) {
+        self.available_threads
+            .retain(|tinfo| qmaps.contains_key(&tinfo.tid));
+        let mut sorted_qmaps: Vec<(&Tid, &SpiedRecordQueue)> = qmaps.iter().collect();
+        sorted_qmaps.sort_by(|(_, q1), (_, q2)| q1.thread_info.pid.cmp(&q2.thread_info.pid));
+        for (tid, q) in sorted_qmaps {
+            if let None = self
+                .available_threads
+                .iter()
+                .find(|tinfo| tinfo.tid == *tid)
+            {
+                self.available_threads.push(q.thread_info.clone());
+            }
+        }
+    }
 }
 
 impl StatefulWidget for ThreadSelectionWidget {
-    type State = AppState;
+    type State = ThreadSelectionState;
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let block = self.get_block(state.focus == Focus::ThreadList);
-        let inner = block.inner(area);
-        block.render(area, buf);
-        state.thread_selection.render_tabs(inner, buf);
+        state.render_tabs(area, buf);
     }
 }

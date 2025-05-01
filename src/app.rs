@@ -1,5 +1,6 @@
 use crate::config::AppConfig;
 
+use crate::state::Focus;
 use crate::{
     priority::SamplerOps,
     state::AppState,
@@ -130,9 +131,45 @@ impl FadeTopApp {
             .direction(Direction::Horizontal)
             .constraints(vec![Constraint::Fill(4), Constraint::Fill(1)])
             .areas(tab);
-        frame.render_stateful_widget(ThreadSelectionWidget {}, tab_selector, &mut self.app_state);
-        frame.render_stateful_widget(TimelineWidget {}, timeline, &mut self.app_state);
-        frame.render_stateful_widget(LocalVariableWidget {}, locals, &mut self.app_state);
+
+        let state = &mut self.app_state;
+
+        let mut quit = false;
+
+        match state.record_queue_map.read() {
+            Ok(qmaps) => {
+                state.thread_selection.update_threads(&qmaps);
+                frame.render_stateful_widget(
+                    ThreadSelectionWidget {}.blocked(state.focus == Focus::ThreadList),
+                    tab_selector,
+                    &mut state.thread_selection,
+                );
+                let queue = state.thread_selection.select_thread(&qmaps);
+                frame.render_stateful_widget(
+                    TimelineWidget::from_queue(queue)
+                        .blocked(state.focus == Focus::Timeline, state.viewport_bound),
+                    timeline,
+                    &mut state.viewport_bound,
+                );
+                frame.render_stateful_widget(
+                    LocalVariableWidget::from_queue(
+                        queue,
+                        state.viewport_bound.selected_depth as usize,
+                    )
+                    .blocked(state.focus == Focus::LogView),
+                    locals,
+                    &mut state.local_variable_state,
+                );
+            }
+            _ => {
+                quit = true;
+            }
+        }
+
+        if quit {
+            state.quit();
+        }
+
         frame.render_widget(Footer {}, footer);
     }
 

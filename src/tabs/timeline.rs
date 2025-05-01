@@ -9,13 +9,12 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style, Stylize},
     text::Line,
-    widgets::{Block, Borders, StatefulWidget, Widget},
+    widgets::{Block, Borders, StatefulWidget},
 };
 
-use crate::{
-    priority::SpiedRecordQueue,
-    state::{AppState, Focus},
-};
+use crate::priority::SpiedRecordQueue;
+
+use super::Blocked;
 
 #[derive(Debug, Clone, Copy)]
 enum ViewPortRight {
@@ -24,10 +23,10 @@ enum ViewPortRight {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct ViewPortBounds {
+pub struct ViewPortBounds {
     right: ViewPortRight,
     pub(crate) width: Duration,
-    pub(super) selected_depth: u16,
+    pub(crate) selected_depth: u16,
 }
 
 impl Default for ViewPortBounds {
@@ -92,23 +91,38 @@ impl ViewPortBounds {
             _ => {}
         }
     }
+}
 
-    fn get_block(&self, queue: &SpiedRecordQueue, focused: bool) -> Block {
-        Block::default()
+pub struct TimelineWidget<'q> {
+    queue: Option<&'q SpiedRecordQueue>,
+}
+
+impl<'q> TimelineWidget<'q> {
+    pub fn from_queue(queue: Option<&'q SpiedRecordQueue>) -> Self {
+        Self { queue }
+    }
+
+    pub fn blocked(
+        self,
+        focused: bool,
+        viewport_bound: ViewPortBounds,
+    ) -> Blocked<'q, TimelineWidget<'q>> {
+        let block = Block::default()
             .title(
                 Line::from(format!(
                     "<-{:0>2}:{:0>2}->",
-                    (self.width).as_secs() / 60,
-                    (self.width).as_secs() % 60
+                    (viewport_bound.width).as_secs() / 60,
+                    (viewport_bound.width).as_secs() % 60
                 ))
                 .bold()
                 .centered(),
             )
             .title(
-                Line::from(match self.right {
+                Line::from(match viewport_bound.right {
                     ViewPortRight::Latest => "Now".to_string(),
                     ViewPortRight::Selected(right) => {
-                        let window_right = (queue.last_update - right).as_secs();
+                        let window_right =
+                            self.queue.map_or(0, |q| (q.last_update - right).as_secs());
                         format!("-{:0>2}:{:0>2}", window_right / 60, window_right % 60)
                     }
                 })
@@ -116,7 +130,9 @@ impl ViewPortBounds {
             )
             .title(
                 Line::from({
-                    let furthest_left = (queue.last_update - queue.start_ts).as_secs();
+                    let furthest_left = self
+                        .queue
+                        .map_or(0, |q| (q.last_update - q.start_ts).as_secs());
                     format!("-{:0>2}:{:0>2}", furthest_left / 60, furthest_left % 60)
                 })
                 .left_aligned(),
@@ -126,79 +142,64 @@ impl ViewPortBounds {
                 Style::new().blue().on_white().bold().italic()
             } else {
                 Style::default()
-            })
+            });
+        Blocked { sub: self, block }
     }
 }
 
-pub struct TimelineWidget {}
-
-impl StatefulWidget for TimelineWidget {
-    type State = AppState;
+impl<'q> StatefulWidget for TimelineWidget<'q> {
+    type State = ViewPortBounds;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        if let Ok(queues) = state.record_queue_map.read() {
-            if let Some(queue) = state.thread_selection.select_thread(&queues) {
-                if let ViewPortRight::Selected(end) = state.viewport_bound.right {
-                    if end > queue.last_update {
-                        state.viewport_bound.right = ViewPortRight::Latest;
-                    }
+        if let Some(queue) = self.queue {
+            if let ViewPortRight::Selected(end) = state.right {
+                if end > queue.last_update {
+                    state.right = ViewPortRight::Latest;
                 }
-                let visible_end = match state.viewport_bound.right {
-                    ViewPortRight::Selected(end) => end,
-                    ViewPortRight::Latest => queue.last_update,
-                };
+            }
+            let visible_end = match state.right {
+                ViewPortRight::Selected(end) => end,
+                ViewPortRight::Latest => queue.last_update,
+            };
 
-                let window_width = state.viewport_bound.width;
-                let visible_start = visible_end - window_width;
+            let window_width = state.width;
+            let visible_start = visible_end - window_width;
 
-                let block = state
-                    .viewport_bound
-                    .get_block(&queue, state.focus == Focus::Timeline);
+            let mut lines = Vec::new();
+            queue.finished_events.iter().for_each(|record| {
+                if record.start <= visible_end
+                    && record.end >= visible_start
+                    && record.depth < area.height as usize
+                {
+                    lines.push(FrameLine {
+                        start: record.start,
+                        end: Some(record.end),
+                        depth: record.depth as u16,
+                        name: &record.frame_key.name,
+                    })
+                }
+            });
 
-                let inner = block.inner(area);
-                block.render(area, buf);
-
-                let mut lines = Vec::new();
-                queue.finished_events.iter().for_each(|record| {
-                    if record.start <= visible_end
-                        && record.end >= visible_start
-                        && record.depth < inner.height as usize
-                    {
-                        lines.push(FrameLine {
-                            start: record.start,
-                            end: Some(record.end),
-                            depth: record.depth as u16,
-                            name: &record.frame_key.name,
-                        })
-                    }
+            queue
+                .unfinished_events
+                .iter()
+                .take(area.height as usize)
+                .enumerate()
+                .for_each(|(depth, record)| {
+                    lines.push(FrameLine {
+                        start: record.start,
+                        end: None,
+                        depth: depth as u16,
+                        name: &record.frame_key.name,
+                    });
                 });
 
-                queue
-                    .unfinished_events
-                    .iter()
-                    .take(inner.height as usize)
-                    .enumerate()
-                    .for_each(|(depth, record)| {
-                        lines.push(FrameLine {
-                            start: record.start,
-                            end: None,
-                            depth: depth as u16,
-                            name: &record.frame_key.name,
-                        });
-                    });
-
-                for line in lines {
-                    line.render_line(inner, buf, window_width, visible_start);
-                }
-
-                buf.cell_mut((
-                    inner.right(),
-                    inner.top() + state.viewport_bound.selected_depth,
-                ))
-                .map(|cell| cell.set_bg(Color::DarkGray).set_char('→'));
+            for line in lines {
+                line.render_line(area, buf, window_width, visible_start);
             }
-        } else {
-            state.quit();
+
+            buf.cell_mut((area.right(), area.top() + state.selected_depth))
+                .map(|cell| cell.set_bg(Color::DarkGray).set_char('→'));
         }
     }
 }

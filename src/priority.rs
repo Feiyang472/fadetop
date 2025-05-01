@@ -15,6 +15,7 @@ use std::sync::RwLock;
 use std::time::Duration;
 use std::time::Instant;
 
+use crate::errors::AppError;
 use crate::ser::parse_duration;
 
 #[derive(Debug, Clone, Default)]
@@ -296,7 +297,7 @@ impl SamplerOps for sampler::Sampler {
             for trace in sample.traces.iter() {
                 record_queue_map
                     .write()
-                    .map_err(|_| std::sync::PoisonError::new(trace.thread_id))?
+                    .map_err(|_| AppError::SamplerSenderError)?
                     .increment(trace);
             }
         }

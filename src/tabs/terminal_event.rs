@@ -1,11 +1,9 @@
 use anyhow::Error;
 use ratatui::{crossterm, crossterm::event};
-use remoteprocess::Tid;
 
 use crate::{
     app::FadeTopApp,
     errors::AppError,
-    priority::SpiedRecordQueue,
     state::{AppState, Focus},
 };
 
@@ -40,39 +38,13 @@ impl AppState {
             _ => Ok(()),
         }
     }
-
-    fn handle_periodic_tick(&mut self) -> Result<(), Error> {
-        let qmaps = self
-            .record_queue_map
-            .read()
-            .map_err(|_| std::sync::PoisonError::new(()))?;
-
-        self.thread_selection
-            .available_threads
-            .retain(|tinfo| qmaps.contains_key(&tinfo.tid));
-        let mut sorted_qmaps: Vec<(&Tid, &SpiedRecordQueue)> = qmaps.iter().collect();
-        sorted_qmaps.sort_by(|(_, q1), (_, q2)| q1.thread_info.pid.cmp(&q2.thread_info.pid));
-        for (tid, q) in sorted_qmaps {
-            if let None = self
-                .thread_selection
-                .available_threads
-                .iter()
-                .find(|tinfo| tinfo.tid == *tid)
-            {
-                self.thread_selection
-                    .available_threads
-                    .push(q.thread_info.clone());
-            }
-        }
-        Ok(())
-    }
 }
 
 impl UpdateEvent {
     pub fn update_state(self, app: &mut FadeTopApp) -> Result<(), Error> {
         match self {
             UpdateEvent::Input(term_event) => app.app_state.handle_crossterm_events(term_event),
-            UpdateEvent::Periodic => app.app_state.handle_periodic_tick(),
+            UpdateEvent::Periodic => Ok(()),
             UpdateEvent::Error(err) => Err(err.into()),
         }
     }
