@@ -1,8 +1,9 @@
 use crate::config::AppConfig;
 
+use crate::errors::AppError;
+use crate::priority::SpiedRecordQueueMap;
 use crate::state::Focus;
 use crate::{
-    priority::SamplerOps,
     state::AppState,
     tabs::{
         local_variables::LocalVariableWidget, terminal_event::UpdateEvent,
@@ -10,6 +11,7 @@ use crate::{
     },
 };
 use anyhow::Error;
+use py_spy::sampler;
 use ratatui::{
     DefaultTerminal, crossterm,
     layout::{Constraint, Direction, Layout},
@@ -20,6 +22,7 @@ use ratatui::{
 };
 
 use std::env;
+use std::sync::RwLock;
 use std::time::Duration;
 use std::{sync::Arc, thread};
 
@@ -48,6 +51,29 @@ impl AppConfig {
             .add_source(config::Environment::with_prefix("FADETOP"))
             .build()?
             .try_deserialize::<AppConfig>()?)
+    }
+}
+
+pub trait SamplerOps: Send + 'static {
+    fn push_to_queue(self, record_queue_map: Arc<RwLock<SpiedRecordQueueMap>>)
+    -> Result<(), Error>;
+}
+
+impl SamplerOps for sampler::Sampler {
+    fn push_to_queue(
+        self,
+        record_queue_map: Arc<RwLock<SpiedRecordQueueMap>>,
+    ) -> Result<(), Error> {
+        for sample in self {
+            for trace in sample.traces.iter() {
+                record_queue_map
+                    .write()
+                    .map_err(|_| AppError::SamplerSenderError)?
+                    .increment(trace);
+            }
+        }
+
+        Ok(())
     }
 }
 

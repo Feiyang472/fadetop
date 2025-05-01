@@ -2,8 +2,8 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 
 use anyhow::Error;
+use fadetop::app::{FadeTopApp, SamplerOps};
 use fadetop::priority::SpiedRecordQueueMap;
-use fadetop::{app::FadeTopApp, priority::SamplerOps};
 use py_spy::stack_trace::LocalVariable;
 use py_spy::{Frame, Pid, StackTrace};
 
