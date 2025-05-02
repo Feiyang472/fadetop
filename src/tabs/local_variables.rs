@@ -5,7 +5,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     text::Line,
-    widgets::{Block, Borders, Paragraph, StatefulWidget, Widget, Wrap},
+    widgets::{Block, BorderType, Borders, Paragraph, StatefulWidget, Widget, Wrap},
 };
 
 use crate::priority::SpiedRecordQueue;
@@ -62,9 +62,10 @@ impl<'a> LocalVariableWidget<'a> {
     pub fn blocked(self, focused: bool) -> Blocked<'a, LocalVariableWidget<'a>> {
         let block = Block::default()
             .title(Line::from("Live Stack").bold().left_aligned())
-            .borders(Borders::TOP | Borders::LEFT)
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
             .border_style(if focused {
-                Style::new().blue().on_white().bold().italic()
+                Style::new().blue().on_dark_gray().bold().italic()
             } else {
                 Style::default()
             });

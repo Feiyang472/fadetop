@@ -4,7 +4,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, StatefulWidget, Widget, Wrap},
+    widgets::{Block, BorderType, Borders, Paragraph, StatefulWidget, Widget, Wrap},
 };
 use remoteprocess::Tid;
 
@@ -25,10 +25,11 @@ impl ThreadSelectionWidget {
         Blocked {
             sub: self,
             block: Block::new()
-                .borders(Borders::TOP)
                 .title("Threads")
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
                 .border_style(if focused {
-                    Style::new().blue().on_white().bold().italic()
+                    Style::new().blue().on_dark_gray().bold().italic()
                 } else {
                     Style::default()
                 }),

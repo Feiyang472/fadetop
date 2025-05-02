@@ -9,7 +9,7 @@ use ratatui::{
     layout::Rect,
     style::{Color, Style, Stylize},
     text::Line,
-    widgets::{Block, Borders, StatefulWidget},
+    widgets::{Block, BorderType, Borders, StatefulWidget},
 };
 
 use crate::priority::SpiedRecordQueue;
@@ -110,7 +110,7 @@ impl<'q> TimelineWidget<'q> {
         let block = Block::default()
             .title(
                 Line::from(format!(
-                    "<-{:0>2}:{:0>2}->",
+                    "❮{:0>2}:{:0>2}❯",
                     (viewport_bound.width).as_secs() / 60,
                     (viewport_bound.width).as_secs() % 60
                 ))
@@ -137,9 +137,10 @@ impl<'q> TimelineWidget<'q> {
                 })
                 .left_aligned(),
             )
-            .borders(Borders::TOP | Borders::RIGHT)
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
             .border_style(if focused {
-                Style::new().blue().on_white().bold().italic()
+                Style::new().blue().on_dark_gray().bold()
             } else {
                 Style::default()
             });
@@ -159,7 +160,7 @@ impl<'q> StatefulWidget for TimelineWidget<'q> {
             }
             let visible_end = match state.right {
                 ViewPortRight::Selected(end) => end,
-                ViewPortRight::Latest => queue.last_update,
+                ViewPortRight::Latest => Instant::now(),
             };
 
             let window_width = state.width;
@@ -173,9 +174,10 @@ impl<'q> StatefulWidget for TimelineWidget<'q> {
                 {
                     lines.push(FrameLine {
                         start: record.start,
-                        end: Some(record.end),
+                        end: record.end,
                         depth: record.depth as u16,
                         name: &record.frame_key.name,
+                        running: false,
                     })
                 }
             });
@@ -188,9 +190,10 @@ impl<'q> StatefulWidget for TimelineWidget<'q> {
                 .for_each(|(depth, record)| {
                     lines.push(FrameLine {
                         start: record.start,
-                        end: None,
+                        end: queue.last_update,
                         depth: depth as u16,
                         name: &record.frame_key.name,
+                        running: true,
                     });
                 });
 
@@ -199,21 +202,22 @@ impl<'q> StatefulWidget for TimelineWidget<'q> {
             }
 
             buf.cell_mut((area.right(), area.top() + state.selected_depth))
-                .map(|cell| cell.set_bg(Color::DarkGray).set_char('→'));
+                .map(|cell| cell.set_bg(Color::DarkGray).set_char('●'));
         }
     }
 }
 
 struct FrameLine<'a> {
     start: Instant,
-    end: Option<Instant>,
+    end: Instant,
     depth: u16,
     name: &'a str,
+    running: bool,
 }
 
 impl FrameLine<'_> {
     fn color(&self) -> Color {
-        if let None = self.end {
+        if self.running {
             return Color::Rgb(
                 0,
                 150 - ((self.depth % 8 * 16) as u8),
@@ -266,12 +270,8 @@ impl FrameLine<'_> {
 
         let relative_start =
             (self.start - visible_start).div_duration_f64(window_width) * tab_width;
-        let relative_end = match self.end {
-            Some(end) => {
-                ((end - visible_start).div_duration_f64(window_width) * tab_width).min(tab_width)
-            }
-            None => tab_width,
-        };
+        let relative_end =
+            ((self.end - visible_start).div_duration_f64(window_width) * tab_width).min(tab_width);
 
         if relative_end > relative_start + 1.0 {
             // choosing line continuity over translational invariance of block width
