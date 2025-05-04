@@ -62,7 +62,7 @@ impl AppState {
 
     pub fn new() -> Self {
         Self {
-            focus: Focus::Timeline,
+            focus: Focus::ThreadList,
             thread_selection: Default::default(),
             record_queue_map: Default::default(),
             viewport_bound: Default::default(),

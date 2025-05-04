@@ -202,7 +202,7 @@ impl<'q> StatefulWidget for TimelineWidget<'q> {
             }
 
             buf.cell_mut((area.right(), area.top() + state.selected_depth))
-                .map(|cell| cell.set_bg(Color::DarkGray).set_char('●'));
+                .map(|cell| cell.set_char('●'));
         }
     }
 }

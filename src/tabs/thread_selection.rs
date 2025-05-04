@@ -3,7 +3,7 @@ use ratatui::{
     crossterm::event::{self, KeyEvent},
     layout::Rect,
     style::{Color, Style, Stylize},
-    text::{Line, Span},
+    text::Line,
     widgets::{Block, BorderType, Borders, Paragraph, StatefulWidget, Widget, Wrap},
 };
 use remoteprocess::Tid;
@@ -86,18 +86,15 @@ impl ThreadSelectionState {
             .selected_thread_index
             .min(titles_length.saturating_sub(1));
 
-        let mut spans = Vec::new();
+        let mut lines = Vec::new();
 
         let mut last_pid = None;
 
         for (i, tinfo) in self.available_threads.iter().enumerate() {
-            if spans.len() > 0 {
-                spans.push(Span::from(" "));
-            }
             if Some(tinfo.pid) != last_pid {
-                spans.push(Span::from(format!("{:08x}❯", tinfo.pid)).bg(Color::Green));
+                lines.push(Line::from(format!("{:08x}❯", tinfo.pid)).bg(Color::Green));
             }
-            spans.push(Span::styled(
+            lines.push(Line::styled(
                 match tinfo.name {
                     Some(ref name) => format!("[{}]", name),
                     None => format!("[{:08x}]", tinfo.tid),
@@ -111,9 +108,7 @@ impl ThreadSelectionState {
             last_pid = Some(tinfo.pid);
         }
 
-        Paragraph::new(Line::from(spans))
-            .wrap(Wrap { trim: true })
-            .render(area, buf);
+        Paragraph::new(lines).render(area, buf);
     }
 
     pub fn update_threads(&mut self, qmaps: &SpiedRecordQueueMap) {
