@@ -78,17 +78,17 @@ impl ThreadSelectionState {
 
         let [processes_tab, threads_tab] = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints(vec![Constraint::Length(9), Constraint::Fill(1)])
+            .constraints(vec![Constraint::Length(13), Constraint::Fill(1)])
             .spacing(1)
             .areas(area);
 
         let mut process_lines = Vec::new();
 
-        for (i, (pid, _)) in self.available_threads.iter().enumerate() {
+        for (i, (pid, tinfos)) in self.available_threads.iter().enumerate() {
             if i == self.selected_thread_index.0 {
-                process_lines.push(Line::from(format!("{:08x}❯", pid)).bg(Color::Blue));
+                process_lines.push(Line::from(format!("{:08x}({:})❯", pid, tinfos.len())).bg(Color::Blue));
             } else {
-                process_lines.push(Line::from(format!("{:08x}", pid)).bg(Color::Green));
+                process_lines.push(Line::from(format!("{:08x}({:})", pid, tinfos.len())).bg(Color::Green));
             }
         }
 
