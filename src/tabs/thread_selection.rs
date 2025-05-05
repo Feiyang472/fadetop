@@ -83,23 +83,44 @@ impl StatefulWidget for ThreadSelectionWidget {
             return;
         }
 
-        let [processes_tab, threads_tab] = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(vec![Constraint::Length(13), Constraint::Fill(1)])
-            .spacing(1)
-            .areas(area);
+        let threads_tab = if state.available_threads.len() > 1 {
+            let [processes_tab, threads_tab] = Layout::default()
+                .direction(Direction::Horizontal)
+                .constraints(vec![Constraint::Length(13), Constraint::Fill(1)])
+                .spacing(1)
+                .areas(area);
 
-        let mut process_lines = Vec::new();
+            let mut process_lines = Vec::new();
 
-        for (i, (pid, tinfos)) in state.available_threads.iter().enumerate() {
-            if i == state.selected_thread_index.0 {
-                process_lines
-                    .push(Line::from(format!("{:08x}({:})❯", pid, tinfos.len())).bg(Color::Blue));
-            } else {
-                process_lines
-                    .push(Line::from(format!("{:08x}({:})", pid, tinfos.len())).bg(Color::Green));
+            for (i, (pid, tinfos)) in state.available_threads.iter().enumerate() {
+                if i == state.selected_thread_index.0 {
+                    process_lines.push(
+                        Line::from(format!("{:08x}({:})❯", pid, tinfos.len())).bg(Color::Blue),
+                    );
+                } else {
+                    process_lines.push(
+                        Line::from(format!("{:08x}({:})", pid, tinfos.len())).bg(Color::Green),
+                    );
+                }
             }
-        }
+            Paragraph::new(process_lines)
+                .scroll((
+                    get_scroll(state.selected_thread_index.0 as u16, area.height),
+                    0,
+                ))
+                .render(processes_tab, buf);
+            if self.focused {
+                buf.cell_mut((
+                    area.left() - 1,
+                    area.top() + (state.selected_thread_index.0 as u16) % area.height.max(1),
+                ))
+                .map(|cell| cell.set_char('↕'));
+            }
+
+            threads_tab
+        } else {
+            area
+        };
 
         let thread_lines = state
             .available_threads
@@ -131,12 +152,6 @@ impl StatefulWidget for ThreadSelectionWidget {
                 },
             );
 
-        Paragraph::new(process_lines)
-            .scroll((
-                get_scroll(state.selected_thread_index.0 as u16, area.height),
-                0,
-            ))
-            .render(processes_tab, buf);
         Paragraph::new(thread_lines)
             .block(Block::new())
             .scroll((
@@ -144,14 +159,6 @@ impl StatefulWidget for ThreadSelectionWidget {
                 0,
             ))
             .render(threads_tab, buf);
-
-        if self.focused {
-            buf.cell_mut((
-                area.left() - 1,
-                area.top() + (state.selected_thread_index.0 as u16) % area.height.max(1),
-            ))
-            .map(|cell| cell.set_char('↕'));
-        }
     }
 }
 
