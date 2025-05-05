@@ -156,7 +156,7 @@ impl StatefulWidget for ThreadSelectionWidget {
 }
 
 impl StatefulWidgetExt for ThreadSelectionWidget {
-    fn get_block(&self, _state: &mut Self::State) -> Block {
+    fn get_block(&self, state: &mut Self::State) -> Block {
         Block::default()
             .title("Threads")
             .borders(Borders::ALL)
@@ -166,5 +166,16 @@ impl StatefulWidgetExt for ThreadSelectionWidget {
             } else {
                 Style::default()
             })
+            .title_bottom(
+                Line::from(
+                    state
+                        .available_threads
+                        .get(state.selected_thread_index.0)
+                        .and_then(|(_, tinfo)| tinfo.get(state.selected_thread_index.1))
+                        .and_then(|tinfo| tinfo.name.clone())
+                        .unwrap_or_default(),
+                )
+                .left_aligned(),
+            )
     }
 }

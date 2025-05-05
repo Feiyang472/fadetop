@@ -1,4 +1,3 @@
-
 use py_spy::stack_trace::LocalVariable;
 use ratatui::{
     buffer::Buffer,
