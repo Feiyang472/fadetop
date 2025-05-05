@@ -14,7 +14,7 @@ use ratatui::{
 
 use crate::priority::SpiedRecordQueue;
 
-use super::Blocked;
+use super::{StatefulWidgetExt, get_scroll};
 
 #[derive(Debug, Clone, Copy)]
 enum ViewPortRight {
@@ -29,6 +29,19 @@ pub struct ViewPortBounds {
     pub(crate) selected_depth: u16,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct ConcreteViewPort {
+    right: Instant,
+    width: Duration,
+    selected_depth: u16,
+}
+
+impl ConcreteViewPort {
+    fn left(&self) -> Instant {
+        self.right - self.width
+    }
+}
+
 impl Default for ViewPortBounds {
     fn default() -> Self {
         Self {
@@ -40,11 +53,11 @@ impl Default for ViewPortBounds {
 }
 
 impl ViewPortBounds {
-    fn zoom_out(&mut self) {
+    pub(crate) fn zoom_out(&mut self) {
         self.width.mul_assign(2);
     }
 
-    fn zoom_in(&mut self) {
+    pub(crate) fn zoom_in(&mut self) {
         self.width.div_assign(2);
     }
 
@@ -80,10 +93,16 @@ impl ViewPortBounds {
         self.selected_depth += 1;
     }
 
-    pub fn handle_key_event(&mut self, key: &KeyEvent) {
+    pub fn handle_zoom_event(&mut self, key: &KeyEvent) {
         match key.code {
-            event::KeyCode::Char('o') => self.zoom_out(),
             event::KeyCode::Char('i') => self.zoom_in(),
+            event::KeyCode::Char('o') => self.zoom_out(),
+            _ => {}
+        }
+    }
+
+    pub fn handle_focused_event(&mut self, key: &KeyEvent) {
+        match key.code {
             event::KeyCode::Left => self.move_left(),
             event::KeyCode::Right => self.move_right(),
             event::KeyCode::Up => self.move_up(),
@@ -95,19 +114,45 @@ impl ViewPortBounds {
 
 pub struct TimelineWidget<'q> {
     queue: Option<&'q SpiedRecordQueue>,
+    focused: bool,
 }
 
 impl<'q> TimelineWidget<'q> {
     pub fn from_queue(queue: Option<&'q SpiedRecordQueue>) -> Self {
-        Self { queue }
+        Self {
+            queue,
+            focused: false,
+        }
     }
 
-    pub fn blocked(
-        self,
-        focused: bool,
-        viewport_bound: ViewPortBounds,
-    ) -> Blocked<'q, TimelineWidget<'q>> {
-        let block = Block::default()
+    fn max_depth(&self) -> usize {
+        self.queue.map_or(0, |q| {
+            q.finished_events
+                .iter()
+                .map(|r| r.depth)
+                .max()
+                .unwrap_or(0)
+                .max(q.unfinished_events.len())
+        })
+    }
+
+    pub fn focused(self, focused: bool) -> Self {
+        Self { focused, ..self }
+    }
+}
+
+impl StatefulWidgetExt for TimelineWidget<'_> {
+    fn get_block(&self, viewport_bound: &mut Self::State) -> Block {
+        let now = Instant::now();
+
+        Block::default()
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(if self.focused {
+                Style::new().blue().on_dark_gray().bold()
+            } else {
+                Style::default()
+            })
             .title(
                 Line::from(format!(
                     "❮{:0>2}:{:0>2}❯",
@@ -121,8 +166,7 @@ impl<'q> TimelineWidget<'q> {
                 Line::from(match viewport_bound.right {
                     ViewPortRight::Latest => "Now".to_string(),
                     ViewPortRight::Selected(right) => {
-                        let window_right =
-                            self.queue.map_or(0, |q| (q.last_update - right).as_secs());
+                        let window_right = (now - right).as_secs();
                         format!("-{:0>2}:{:0>2}", window_right / 60, window_right % 60)
                     }
                 })
@@ -130,21 +174,19 @@ impl<'q> TimelineWidget<'q> {
             )
             .title(
                 Line::from({
-                    let furthest_left = self
-                        .queue
-                        .map_or(0, |q| (q.last_update - q.start_ts).as_secs());
+                    let furthest_left = self.queue.map_or(0, |q| (now - q.start_ts).as_secs());
                     format!("-{:0>2}:{:0>2}", furthest_left / 60, furthest_left % 60)
                 })
                 .left_aligned(),
             )
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(if focused {
-                Style::new().blue().on_dark_gray().bold()
-            } else {
-                Style::default()
-            });
-        Blocked { sub: self, block }
+            .title_bottom(
+                Line::from(format!(
+                    "{}/{}",
+                    viewport_bound.selected_depth,
+                    self.max_depth()
+                ))
+                .right_aligned(),
+            )
     }
 }
 
@@ -152,25 +194,29 @@ impl<'q> StatefulWidget for TimelineWidget<'q> {
     type State = ViewPortBounds;
 
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
+        if area.height == 0 {
+            return;
+        }
         if let Some(queue) = self.queue {
+            let now = Instant::now();
             if let ViewPortRight::Selected(end) = state.right {
-                if end > queue.last_update {
+                if end > now {
                     state.right = ViewPortRight::Latest;
                 }
             }
             let visible_end = match state.right {
                 ViewPortRight::Selected(end) => end,
-                ViewPortRight::Latest => Instant::now(),
+                ViewPortRight::Latest => now,
             };
 
-            let window_width = state.width;
-            let visible_start = visible_end - window_width;
+            let bound = ConcreteViewPort {
+                right: visible_end,
+                width: state.width,
+                selected_depth: state.selected_depth,
+            };
 
             let mut lines = Vec::new();
             queue.finished_events.iter().for_each(|record| {
-                if record.start <= visible_end
-                    && record.end >= visible_start
-                    && record.depth < area.height as usize
                 {
                     lines.push(FrameLine {
                         start: record.start,
@@ -185,7 +231,6 @@ impl<'q> StatefulWidget for TimelineWidget<'q> {
             queue
                 .unfinished_events
                 .iter()
-                .take(area.height as usize)
                 .enumerate()
                 .for_each(|(depth, record)| {
                     lines.push(FrameLine {
@@ -198,11 +243,23 @@ impl<'q> StatefulWidget for TimelineWidget<'q> {
                 });
 
             for line in lines {
-                line.render_line(area, buf, window_width, visible_start);
+                line.render_line(area, buf, bound);
             }
 
-            buf.cell_mut((area.right(), area.top() + state.selected_depth))
-                .map(|cell| cell.set_char('●'));
+            let footer = self
+                .queue
+                .and_then(|q| q.unfinished_events.get(state.selected_depth as usize))
+                .map_or(Default::default(), |r| r.frame_key.fqn().clone());
+
+            buf.set_span(area.left(), area.bottom(), &footer.into(), area.width);
+
+            if self.focused {
+                buf.cell_mut((
+                    area.right(),
+                    area.top() + state.selected_depth % area.height.max(1),
+                ))
+                .map(|cell| cell.set_char('↕'));
+            }
         }
     }
 }
@@ -255,23 +312,25 @@ impl FrameLine<'_> {
         }
     }
 
-    fn render_line(
-        self,
-        inner: Rect,
-        buf: &mut Buffer,
-        window_width: Duration,
-        visible_start: Instant,
-    ) {
-        if window_width.is_zero() {
+    fn render_line(self, inner: Rect, buf: &mut Buffer, bound: ConcreteViewPort) {
+        let window_width = bound.width;
+        if window_width.is_zero() || inner.height == 0 {
+            return;
+        }
+
+        if self.start >= bound.right
+            || self.end <= bound.left()
+            || self.depth.saturating_div(inner.height)
+                != bound.selected_depth.saturating_div(inner.height)
+        {
             return;
         }
 
         let tab_width = inner.width as f64;
 
-        let relative_start =
-            (self.start - visible_start).div_duration_f64(window_width) * tab_width;
+        let relative_start = (self.start - bound.left()).div_duration_f64(window_width) * tab_width;
         let relative_end =
-            ((self.end - visible_start).div_duration_f64(window_width) * tab_width).min(tab_width);
+            ((self.end - bound.left()).div_duration_f64(window_width) * tab_width).min(tab_width);
 
         if relative_end > relative_start + 1.0 {
             // choosing line continuity over translational invariance of block width
@@ -285,7 +344,7 @@ impl FrameLine<'_> {
 
             buf.set_string(
                 inner.left() + relative_start as u16,
-                inner.top() + self.depth,
+                inner.top() + self.depth - get_scroll(bound.selected_depth, inner.height),
                 padded_string,
                 Style::default().fg(Color::White).bg(self.color()),
             );

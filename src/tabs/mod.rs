@@ -9,23 +9,40 @@ pub mod terminal_event;
 pub mod thread_selection;
 pub mod timeline;
 
-pub struct Blocked<'b, W> {
+pub struct Blocked<W> {
     sub: W,
-    block: Block<'b>,
 }
 
-impl<W: Widget> Widget for Blocked<'_, W> {
+impl<W: Widget> Widget for Blocked<W> {
     fn render(self, area: Rect, buf: &mut Buffer) {
-        let inner = self.block.inner(area);
-        self.block.render(area, buf);
+        let block = Block::default();
+        let inner = block.inner(area);
+        block.render(area, buf);
         self.sub.render(inner, buf);
     }
 }
-impl<W: StatefulWidget> StatefulWidget for Blocked<'_, W> {
+
+pub trait StatefulWidgetExt: StatefulWidget + Sized {
+    fn get_block(&self, _state: &mut Self::State) -> Block {
+        Default::default()
+    }
+
+    fn blocked<'b>(self) -> Blocked<Self> {
+        Blocked { sub: self }
+    }
+}
+
+impl<W: StatefulWidgetExt> StatefulWidget for Blocked<W> {
     type State = W::State;
     fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let inner = self.block.inner(area);
-        self.block.render(area, buf);
+        let block = self.sub.get_block(state);
+
+        let inner = block.inner(area);
+        block.render(area, buf);
         self.sub.render(inner, buf, state);
     }
+}
+
+pub(super) fn get_scroll(x: u16, capacity: u16) -> u16 {
+    x.saturating_div(capacity.max(1)) * capacity.max(1)
 }

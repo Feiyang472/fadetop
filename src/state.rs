@@ -5,14 +5,16 @@ use ratatui::{
     DefaultTerminal, Frame,
     crossterm::event,
     layout::{Constraint, Direction, Layout},
-    style::{Color, Style},
-    text::Line,
+    style::{Color, Style, Stylize},
+    text::{Line, Span},
+    widgets::{Block, Borders},
 };
 use tokio::sync::mpsc::Receiver;
 
 use crate::{
     priority::SpiedRecordQueueMap,
     tabs::{
+        StatefulWidgetExt,
         local_variables::{LocalVariableSelection, LocalVariableWidget},
         terminal_event::UpdateEvent,
         thread_selection::{ThreadSelectionState, ThreadSelectionWidget},
@@ -72,10 +74,25 @@ impl AppState {
     }
 
     fn render_full_app(&mut self, frame: &mut Frame) {
-        let [inner, footer] = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(vec![Constraint::Fill(1), Constraint::Length(1)])
-            .areas(frame.area());
+        let out_block = {
+            Block::default()
+                .borders(Borders::NONE)
+                .title_top(Line::from("Esc").underlined().right_aligned())
+                .title_top(Line::from("Tab").underlined().left_aligned())
+                .title_top(
+                    Line::from(vec![
+                        "Zoom ".into(),
+                        Span::from("I").underlined(),
+                        "n/".into(),
+                        Span::from("O").underlined(),
+                        "ut".into(),
+                    ])
+                    .left_aligned(),
+                )
+                .title_style(Style::default().bg(Color::Rgb(0, 0, 100)))
+        };
+
+        let inner = out_block.inner(frame.area());
         let [timeline, right] = Layout::default()
             .direction(Direction::Horizontal)
             .constraints(vec![Constraint::Fill(4), Constraint::Fill(1)])
@@ -89,14 +106,18 @@ impl AppState {
             Ok(qmaps) => {
                 self.thread_selection.update_threads(&qmaps);
                 frame.render_stateful_widget(
-                    ThreadSelectionWidget {}.blocked(self.focus == Focus::ThreadList),
+                    ThreadSelectionWidget {
+                        focused: self.focus == Focus::ThreadList,
+                    }
+                    .blocked(),
                     tab_selector,
                     &mut self.thread_selection,
                 );
                 let queue = self.thread_selection.select_thread(&qmaps);
                 frame.render_stateful_widget(
                     TimelineWidget::from_queue(queue)
-                        .blocked(self.focus == Focus::Timeline, self.viewport_bound),
+                        .focused(self.focus == Focus::Timeline)
+                        .blocked(),
                     timeline,
                     &mut self.viewport_bound,
                 );
@@ -105,7 +126,8 @@ impl AppState {
                         queue,
                         self.viewport_bound.selected_depth as usize,
                     )
-                    .blocked(self.focus == Focus::LogView),
+                    .focused(self.focus == Focus::LogView)
+                    .blocked(),
                     locals,
                     &mut self.local_variable_state,
                 );
@@ -115,13 +137,7 @@ impl AppState {
             }
         }
 
-        frame.render_widget(
-            Line::from(
-                "Press Esc to quit, ←↑↓→ to pan within tab, Tab to switch tabs, i/o to zoom in/out",
-            )
-            .style(Style::default().bg(Color::Rgb(0, 0, 12))),
-            footer,
-        );
+        frame.render_widget(out_block, frame.area());
     }
 
     pub fn handle_crossterm_events(&mut self, term_event: event::Event) -> Result<(), Error> {
@@ -137,11 +153,14 @@ impl AppState {
                     };
                     Ok(())
                 }
+                event::KeyCode::Char('i') | event::KeyCode::Char('o') => {
+                    Ok(self.viewport_bound.handle_zoom_event(&key))
+                }
                 _ => Ok({
                     match self.focus {
-                        Focus::ThreadList => self.thread_selection.handle_key_event(&key),
-                        Focus::Timeline => self.viewport_bound.handle_key_event(&key),
-                        Focus::LogView => self.local_variable_state.handle_key_event(&key),
+                        Focus::ThreadList => self.thread_selection.handle_focused_event(&key),
+                        Focus::Timeline => self.viewport_bound.handle_focused_event(&key),
+                        Focus::LogView => self.local_variable_state.handle_focused_event(&key),
                     }
                 }),
             },

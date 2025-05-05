@@ -7,11 +7,11 @@ use ratatui::{
     text::Line,
     widgets::{Block, BorderType, Borders, Paragraph, StatefulWidget, Widget},
 };
-use remoteprocess::{Pid, Tid};
+use remoteprocess::Pid;
 
 use crate::priority::{SpiedRecordQueue, SpiedRecordQueueMap, ThreadInfo};
 
-use super::Blocked;
+use super::{StatefulWidgetExt, get_scroll};
 
 #[derive(Debug, Clone, Default)]
 pub struct ThreadSelectionState {
@@ -19,27 +19,12 @@ pub struct ThreadSelectionState {
     available_threads: Vec<(Pid, Vec<ThreadInfo>)>,
 }
 
-pub struct ThreadSelectionWidget {}
-
-impl ThreadSelectionWidget {
-    pub fn blocked<'b>(self, focused: bool) -> Blocked<'b, ThreadSelectionWidget> {
-        Blocked {
-            sub: self,
-            block: Block::new()
-                .title("Threads")
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .border_style(if focused {
-                    Style::new().blue().on_dark_gray().bold().italic()
-                } else {
-                    Style::default()
-                }),
-        }
-    }
+pub struct ThreadSelectionWidget {
+    pub(crate) focused: bool,
 }
 
 impl ThreadSelectionState {
-    pub fn handle_key_event(&mut self, key: &KeyEvent) {
+    pub fn handle_focused_event(&mut self, key: &KeyEvent) {
         match key.code {
             event::KeyCode::Right => {
                 self.selected_thread_index.1 = self.selected_thread_index.1.saturating_add(1)
@@ -71,7 +56,29 @@ impl ThreadSelectionState {
         )
     }
 
-    fn render_tabs(&mut self, area: Rect, buf: &mut Buffer) {
+    pub fn update_threads(&mut self, qmaps: &SpiedRecordQueueMap) {
+        self.available_threads = qmaps
+            .iter()
+            .map(|(_, q)| q.thread_info.clone())
+            .into_group_map_by(|info| info.pid)
+            .into_iter()
+            .sorted_by(|(pid1, _), (pid2, _)| pid1.cmp(pid2))
+            .collect();
+
+        self.selected_thread_index = (
+            self.selected_thread_index.0 % self.available_threads.len().max(1),
+            self.selected_thread_index.1
+                % (self
+                    .available_threads
+                    .get(self.selected_thread_index.0)
+                    .map_or(1, |(_, threads)| threads.len().max(1))),
+        );
+    }
+}
+
+impl StatefulWidget for ThreadSelectionWidget {
+    type State = ThreadSelectionState;
+    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
         if area.is_empty() {
             return;
         }
@@ -84,17 +91,19 @@ impl ThreadSelectionState {
 
         let mut process_lines = Vec::new();
 
-        for (i, (pid, tinfos)) in self.available_threads.iter().enumerate() {
-            if i == self.selected_thread_index.0 {
-                process_lines.push(Line::from(format!("{:08x}({:})❯", pid, tinfos.len())).bg(Color::Blue));
+        for (i, (pid, tinfos)) in state.available_threads.iter().enumerate() {
+            if i == state.selected_thread_index.0 {
+                process_lines
+                    .push(Line::from(format!("{:08x}({:})❯", pid, tinfos.len())).bg(Color::Blue));
             } else {
-                process_lines.push(Line::from(format!("{:08x}({:})", pid, tinfos.len())).bg(Color::Green));
+                process_lines
+                    .push(Line::from(format!("{:08x}({:})", pid, tinfos.len())).bg(Color::Green));
             }
         }
 
-        let thread_lines = self
+        let thread_lines = state
             .available_threads
-            .get(self.selected_thread_index.0)
+            .get(state.selected_thread_index.0)
             .map_or_else(
                 || Vec::new(),
                 |(_, thread_infos)| {
@@ -102,53 +111,60 @@ impl ThreadSelectionState {
                         .iter()
                         .enumerate()
                         .map(|(j, tinfo)| {
+                            let mut style = Style::default();
+                            let mut padding = ('[', ']');
+                            if j == state.selected_thread_index.1 {
+                                style = style.bg(Color::default()).fg(Color::Blue).bold();
+                                if self.focused {
+                                    padding = ('←', '→');
+                                }
+                            }
                             Line::styled(
                                 match tinfo.name {
-                                    Some(ref name) => format!("[{}]", name),
-                                    None => format!("[{:08x}]", tinfo.tid),
+                                    Some(ref name) => format!("{}{}{}", padding.0, name, padding.1),
+                                    None => format!("{}{:08x}{}", padding.0, tinfo.tid, padding.1),
                                 },
-                                if j == self.selected_thread_index.1 {
-                                    Style::default().bg(Color::default()).fg(Color::Blue).bold()
-                                } else {
-                                    Style::default()
-                                },
+                                style,
                             )
                         })
                         .collect()
                 },
             );
 
-        Paragraph::new(process_lines).render(processes_tab, buf);
+        Paragraph::new(process_lines)
+            .scroll((
+                get_scroll(state.selected_thread_index.0 as u16, area.height),
+                0,
+            ))
+            .render(processes_tab, buf);
         Paragraph::new(thread_lines)
             .block(Block::new())
+            .scroll((
+                get_scroll(state.selected_thread_index.1 as u16, area.height),
+                0,
+            ))
             .render(threads_tab, buf);
-    }
 
-    pub fn update_threads(&mut self, qmaps: &SpiedRecordQueueMap) {
-        self.available_threads = qmaps
-            .iter()
-            .map(|(_, q)| q.thread_info.clone())
-            .into_group_map_by(|info| info.pid)
-            .into_iter()
-            .sorted_by(|(pid1, _), (pid2, _)| pid1.cmp(pid2))
-            .collect();
-
-        self.selected_thread_index = (
-            self.selected_thread_index
-                .0
-                % self.available_threads.len().max(1),
-            self.selected_thread_index.1 % (
-                self.available_threads
-                    .get(self.selected_thread_index.0)
-                    .map_or(1, |(_, threads)| threads.len().max(1))
-            ),
-        );
+        if self.focused {
+            buf.cell_mut((
+                area.left() - 1,
+                area.top() + (state.selected_thread_index.0 as u16) % area.height.max(1),
+            ))
+            .map(|cell| cell.set_char('↕'));
+        }
     }
 }
 
-impl StatefulWidget for ThreadSelectionWidget {
-    type State = ThreadSelectionState;
-    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        state.render_tabs(area, buf);
+impl StatefulWidgetExt for ThreadSelectionWidget {
+    fn get_block(&self, _state: &mut Self::State) -> Block {
+        Block::default()
+            .title("Threads")
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(if self.focused {
+                Style::new().blue().on_dark_gray().bold().italic()
+            } else {
+                Style::default()
+            })
     }
 }

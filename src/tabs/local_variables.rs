@@ -2,15 +2,17 @@ use py_spy::stack_trace::LocalVariable;
 use ratatui::{
     buffer::Buffer,
     crossterm::event::{self, KeyEvent},
-    layout::{Constraint, Direction, Layout, Rect},
+    layout::{Constraint, Rect},
     style::{Color, Style, Stylize},
     text::Line,
-    widgets::{Block, BorderType, Borders, Paragraph, StatefulWidget, Widget, Wrap},
+    widgets::{
+        Block, BorderType, Borders, HighlightSpacing, Row, StatefulWidget, Table, TableState,
+    },
 };
 
 use crate::priority::SpiedRecordQueue;
 
-use super::Blocked;
+use super::{StatefulWidgetExt, get_scroll};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct LocalVariableSelection {
@@ -42,7 +44,7 @@ impl LocalVariableSelection {
         self.scroll_offset = (0, 0);
     }
 
-    pub fn handle_key_event(&mut self, key: &KeyEvent) {
+    pub fn handle_focused_event(&mut self, key: &KeyEvent) {
         match key.code {
             event::KeyCode::Up => self.move_up(),
             event::KeyCode::Down => self.move_down(),
@@ -54,34 +56,25 @@ impl LocalVariableSelection {
 }
 
 pub struct LocalVariableWidget<'a> {
-    fqn: Option<String>,
     locals: Option<&'a Vec<LocalVariable>>,
+    focused: bool,
 }
 
 impl<'a> LocalVariableWidget<'a> {
-    pub fn blocked(self, focused: bool) -> Blocked<'a, LocalVariableWidget<'a>> {
-        let block = Block::default()
-            .title(Line::from("Live Stack").bold().left_aligned())
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(if focused {
-                Style::new().blue().on_dark_gray().bold().italic()
-            } else {
-                Style::default()
-            });
-        Blocked { sub: self, block }
+    pub fn focused(self, focused: bool) -> Self {
+        Self { focused, ..self }
     }
 
     pub fn from_queue(queue: Option<&'a SpiedRecordQueue>, selected_depth: usize) -> Self {
         if let Some(record) = queue.and_then(|q| q.unfinished_events.get(selected_depth)) {
             Self {
-                fqn: Some(record.frame_key.fqn()),
                 locals: record.locals(),
+                focused: false,
             }
         } else {
             Self {
-                fqn: None,
                 locals: None,
+                focused: false,
             }
         }
     }
@@ -89,46 +82,52 @@ impl<'a> LocalVariableWidget<'a> {
 
 impl StatefulWidget for LocalVariableWidget<'_> {
     type State = LocalVariableSelection;
-    fn render(self, area: Rect, buf: &mut Buffer, state: &mut Self::State) {
-        let local_section = if let Some(fqn) = self.fqn {
-            let [fqn_section, local_section] = Layout::default()
-                .direction(Direction::Vertical)
-                .constraints(vec![
-                    Constraint::Length((fqn.len() as u16).div_ceil(area.width)),
-                    Constraint::Fill(1),
-                ])
-                .areas(area);
-            Widget::render(
-                Paragraph::new(fqn.clone())
-                    .style(Style::new().fg(Color::White).bg(Color::Blue))
-                    .wrap(Wrap { trim: true }),
-                fqn_section,
-                buf,
-            );
-            local_section
-        } else {
-            area
-        };
-
+    fn render(self, local_section: Rect, buf: &mut Buffer, state: &mut Self::State) {
         if let Some(locals) = self.locals {
-            Widget::render(
-                Paragraph::new(
+            state.scroll_offset.0 = state.scroll_offset.0 % (locals.len() as u16).max(1);
+            StatefulWidget::render(
+                Table::new(
                     locals
                         .iter()
-                        .flat_map(|local_var| {
-                            vec![
-                                Line::from(local_var.name.clone())
-                                    .style(Style::default().fg(Color::Indexed(4))),
-                                Line::from(local_var.repr.clone().unwrap_or_default()),
-                            ]
+                        .map(|local_var| {
+                            Row::new(vec![
+                                local_var.name.clone(),
+                                local_var.repr.clone().unwrap_or_default(),
+                            ])
                         })
-                        .collect::<Vec<Line>>(),
+                        .collect::<Vec<Row>>(),
+                    vec![Constraint::Fill(1), Constraint::Fill(3)],
                 )
-                .scroll(state.scroll_offset)
-                .wrap(Wrap { trim: true }),
+                .highlight_spacing(HighlightSpacing::Always)
+                .row_highlight_style(Style::new().fg(Color::LightBlue).bold()),
                 local_section,
                 buf,
+                &mut TableState::default()
+                    .with_offset(get_scroll(state.scroll_offset.0, local_section.height) as usize)
+                    .with_selected(state.scroll_offset.0 as usize),
             );
         }
+
+        if self.focused {
+            buf.cell_mut((
+                local_section.left() - 1,
+                local_section.top() + (state.scroll_offset.0 as u16) % local_section.height.max(1),
+            ))
+            .map(|cell| cell.set_char('↕'));
+        }
+    }
+}
+
+impl StatefulWidgetExt for LocalVariableWidget<'_> {
+    fn get_block(&self, _state: &mut Self::State) -> Block {
+        Block::default()
+            .title(Line::from("Live Stack").bold().left_aligned())
+            .borders(Borders::ALL)
+            .border_type(BorderType::Rounded)
+            .border_style(if self.focused {
+                Style::new().blue().on_dark_gray().bold().italic()
+            } else {
+                Style::default()
+            })
     }
 }
