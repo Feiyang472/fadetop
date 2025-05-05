@@ -38,6 +38,7 @@ pub struct AppState {
     local_variable_state: LocalVariableSelection,
     pub record_queue_map: Arc<RwLock<SpiedRecordQueueMap>>,
     running: bool,
+    ratio: u16,
 }
 
 impl AppState {
@@ -70,6 +71,7 @@ impl AppState {
             viewport_bound: Default::default(),
             local_variable_state: LocalVariableSelection::default(),
             running: true,
+            ratio: 80,
         }
     }
 
@@ -95,7 +97,10 @@ impl AppState {
         let inner = out_block.inner(frame.area());
         let [timeline, right] = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints(vec![Constraint::Fill(4), Constraint::Fill(1)])
+            .constraints(vec![
+                Constraint::Percentage(self.ratio),
+                Constraint::Percentage(100 - self.ratio),
+            ])
             .areas(inner);
         let [tab_selector, locals] = Layout::default()
             .direction(Direction::Vertical)
@@ -142,10 +147,10 @@ impl AppState {
 
     pub fn handle_crossterm_events(&mut self, term_event: event::Event) -> Result<(), Error> {
         match term_event {
-            event::Event::Key(key) => match key.code {
+            event::Event::Key(key) => match (key.modifiers, key.code) {
                 // Global shortcuts
-                event::KeyCode::Esc => Ok(self.quit()),
-                event::KeyCode::Tab => {
+                (_, event::KeyCode::Esc) => Ok(self.quit()),
+                (_, event::KeyCode::Tab) => {
                     self.focus = match self.focus {
                         Focus::ThreadList => Focus::Timeline,
                         Focus::Timeline => Focus::LogView,
@@ -153,8 +158,14 @@ impl AppState {
                     };
                     Ok(())
                 }
-                event::KeyCode::Char('i') | event::KeyCode::Char('o') => {
+                (_, event::KeyCode::Char('i') | event::KeyCode::Char('o')) => {
                     Ok(self.viewport_bound.handle_zoom_event(&key))
+                }
+                (event::KeyModifiers::CONTROL, event::KeyCode::Right) => {
+                    Ok(self.ratio = (self.ratio + 1).min(100))
+                }
+                (event::KeyModifiers::CONTROL, event::KeyCode::Left) => {
+                    Ok(self.ratio = self.ratio.saturating_sub(1))
                 }
                 _ => Ok({
                     match self.focus {
