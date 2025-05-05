@@ -4,7 +4,7 @@ use ratatui::{
     crossterm::event::{self, KeyEvent},
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
-    text::Line,
+    text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph, StatefulWidget, Widget},
 };
 use remoteprocess::Pid;
@@ -13,10 +13,21 @@ use crate::priority::{SpiedRecordQueue, SpiedRecordQueueMap, ThreadInfo};
 
 use super::{StatefulWidgetExt, get_scroll};
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct ThreadSelectionState {
     selected_thread_index: (usize, usize),
     available_threads: Vec<(Pid, Vec<ThreadInfo>)>,
+    show_processes: bool,
+}
+
+impl Default for ThreadSelectionState {
+    fn default() -> Self {
+        Self {
+            selected_thread_index: (0, 0),
+            available_threads: Vec::new(),
+            show_processes: true,
+        }
+    }
 }
 
 pub struct ThreadSelectionWidget {
@@ -37,6 +48,9 @@ impl ThreadSelectionState {
             }
             event::KeyCode::Up => {
                 self.selected_thread_index.0 = self.selected_thread_index.0.saturating_sub(1)
+            }
+            event::KeyCode::Char('p') => {
+                self.show_processes ^= true;
             }
             _ => {}
         }
@@ -83,7 +97,7 @@ impl StatefulWidget for ThreadSelectionWidget {
             return;
         }
 
-        let threads_tab = if state.available_threads.len() > 1 {
+        let threads_tab = if state.available_threads.len() > 1 && state.show_processes {
             let [processes_tab, threads_tab] = Layout::default()
                 .direction(Direction::Horizontal)
                 .constraints(vec![Constraint::Length(13), Constraint::Fill(1)])
@@ -164,7 +178,7 @@ impl StatefulWidget for ThreadSelectionWidget {
 
 impl StatefulWidgetExt for ThreadSelectionWidget {
     fn get_block(&self, state: &mut Self::State) -> Block {
-        Block::default()
+        let mut block = Block::default()
             .title("Threads")
             .borders(Borders::ALL)
             .border_type(BorderType::Rounded)
@@ -172,17 +186,26 @@ impl StatefulWidgetExt for ThreadSelectionWidget {
                 Style::new().blue().on_dark_gray().bold().italic()
             } else {
                 Style::default()
-            })
-            .title_bottom(
+            });
+
+        if self.focused {
+            block = block.title_bottom(
+                Line::from(vec![Span::from("p").underlined(), "rocesses".into()]).right_aligned(),
+            )
+        }
+        if state.show_processes {
+            block
+        } else {
+            block.title_bottom(
                 Line::from(
                     state
                         .available_threads
                         .get(state.selected_thread_index.0)
-                        .and_then(|(_, tinfo)| tinfo.get(state.selected_thread_index.1))
-                        .and_then(|tinfo| tinfo.name.clone())
+                        .and_then(|(pid, _)| format!("{:08x}", pid).into())
                         .unwrap_or_default(),
                 )
                 .left_aligned(),
             )
+        }
     }
 }
