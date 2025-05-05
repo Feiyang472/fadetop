@@ -2,8 +2,8 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 
 use anyhow::Error;
+use fadetop::app::{FadeTopApp, SamplerOps};
 use fadetop::priority::SpiedRecordQueueMap;
-use fadetop::{app::FadeTopApp, priority::SamplerOps};
 use py_spy::stack_trace::LocalVariable;
 use py_spy::{Frame, Pid, StackTrace};
 
@@ -21,12 +21,22 @@ impl SamplerOps for MockSampler {
                     line: 1,
                     module: Some("test".to_string()),
                     short_filename: Some("test.py".to_string()),
-                    locals: Some(vec![LocalVariable {
-                        name: "x".to_string(),
-                        addr: 10,
-                        arg: true,
-                        repr: Some("data, verryyyyyy looonnnnnnng data".to_string()),
-                    }]),
+                    locals: Some(vec![
+                        LocalVariable {
+                            name: "x".to_string(),
+                            addr: 10,
+                            arg: true,
+                            repr: Some("data, verryyyyyy looonnnnnnng data".to_string()),
+                        },
+                        LocalVariable {
+                            name: "είναι απλά ένα κείμενο".to_string(),
+                            addr: 10,
+                            arg: true,
+                            repr: Some(
+                                "χωρίς νόημα για τους επαγγελματίες της τυπογραφίας ".to_string(),
+                            ),
+                        },
+                    ]),
                     is_entry: false,
                 };
 

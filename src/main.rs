@@ -29,7 +29,7 @@ async fn main() -> Result<(), Error> {
             py_spy::sampler::Sampler::new(
                 args.pid,
                 &py_spy::Config {
-                    blocking: py_spy::config::LockingStrategy::NonBlocking,
+                    blocking: configs.locking_strategy,
                     sampling_rate: configs.sampling_rate,
                     subprocesses: configs.subprocesses,
                     native: configs.native,

@@ -1,5 +1,3 @@
-use anyhow::Error;
-use py_spy::sampler;
 use py_spy::stack_trace::Frame;
 use py_spy::stack_trace::LocalVariable;
 use py_spy::stack_trace::StackTrace;
@@ -10,8 +8,6 @@ use std::collections::BinaryHeap;
 use std::collections::HashMap;
 use std::collections::hash_map::Iter;
 use std::collections::hash_map::Keys;
-use std::sync::Arc;
-use std::sync::RwLock;
 use std::time::Duration;
 use std::time::Instant;
 
@@ -279,29 +275,6 @@ impl SpiedRecordQueueMap {
         queue.last_update = now;
 
         self.map.insert(trace.thread_id as Tid, queue);
-    }
-}
-
-pub trait SamplerOps: Send + 'static {
-    fn push_to_queue(self, record_queue_map: Arc<RwLock<SpiedRecordQueueMap>>)
-    -> Result<(), Error>;
-}
-
-impl SamplerOps for sampler::Sampler {
-    fn push_to_queue(
-        self,
-        record_queue_map: Arc<RwLock<SpiedRecordQueueMap>>,
-    ) -> Result<(), Error> {
-        for sample in self {
-            for trace in sample.traces.iter() {
-                record_queue_map
-                    .write()
-                    .map_err(|_| std::sync::PoisonError::new(trace.thread_id))?
-                    .increment(trace);
-            }
-        }
-
-        Ok(())
     }
 }
 

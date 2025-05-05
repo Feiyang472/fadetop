@@ -1,6 +1,10 @@
 use std::time::Duration;
 
-use crate::{priority::ForgetRules, ser::parse_duration};
+use crate::{
+    priority::ForgetRules,
+    ser::{parse_duration, parse_locking_strategy},
+};
+use py_spy::config::LockingStrategy;
 use serde::Deserialize;
 
 fn default_sampling_rate() -> u64 {
@@ -30,6 +34,10 @@ fn default_update_period() -> Duration {
     Duration::from_millis(100)
 }
 
+fn default_locking_strategy() -> LockingStrategy {
+    LockingStrategy::Lock
+}
+
 #[derive(Deserialize, Debug, Clone)]
 pub struct AppConfig {
     #[serde(default = "default_sampling_rate")]
@@ -47,4 +55,9 @@ pub struct AppConfig {
     pub rules: Vec<ForgetRules>,
     #[serde(default = "default_update_period")]
     pub update_period: Duration,
+    #[serde(
+        deserialize_with = "parse_locking_strategy",
+        default = "default_locking_strategy"
+    )]
+    pub locking_strategy: LockingStrategy,
 }

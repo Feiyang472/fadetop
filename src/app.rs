@@ -1,42 +1,16 @@
 use crate::config::AppConfig;
 
-use crate::{
-    priority::SamplerOps,
-    state::AppState,
-    tabs::{
-        local_variables::LocalVariableWidget, terminal_event::UpdateEvent,
-        thread_selection::ThreadSelectionWidget, timeline::TimelineWidget,
-    },
-};
+use crate::errors::AppError;
+use crate::priority::SpiedRecordQueueMap;
+use crate::{state::AppState, tabs::terminal_event::UpdateEvent};
 use anyhow::Error;
-use ratatui::{
-    DefaultTerminal, crossterm,
-    layout::{Constraint, Direction, Layout},
-    prelude::Frame,
-    style::{Color, Style},
-    text::Line,
-    widgets::Widget,
-};
+use py_spy::sampler;
+use ratatui::{DefaultTerminal, crossterm};
 
 use std::env;
+use std::sync::RwLock;
 use std::time::Duration;
 use std::{sync::Arc, thread};
-
-#[derive(Debug, Clone, Copy)]
-struct Footer {}
-
-impl Widget for Footer {
-    fn render(self, area: ratatui::prelude::Rect, buf: &mut ratatui::prelude::Buffer)
-    where
-        Self: Sized,
-    {
-        Line::from(
-            "Press Esc to quit, ←↑↓→ to pan within tab, Tab to switch tabs, i/o to zoom in/out",
-        )
-        .style(Style::default().bg(Color::Rgb(0, 0, 12)))
-        .render(area, buf);
-    }
-}
 
 impl AppConfig {
     pub fn from_configs() -> Result<Self, Error> {
@@ -47,6 +21,29 @@ impl AppConfig {
             .add_source(config::Environment::with_prefix("FADETOP"))
             .build()?
             .try_deserialize::<AppConfig>()?)
+    }
+}
+
+pub trait SamplerOps: Send + 'static {
+    fn push_to_queue(self, record_queue_map: Arc<RwLock<SpiedRecordQueueMap>>)
+    -> Result<(), Error>;
+}
+
+impl SamplerOps for sampler::Sampler {
+    fn push_to_queue(
+        self,
+        record_queue_map: Arc<RwLock<SpiedRecordQueueMap>>,
+    ) -> Result<(), Error> {
+        for sample in self {
+            for trace in sample.traces.iter() {
+                record_queue_map
+                    .write()
+                    .map_err(|_| AppError::SamplerSenderError)?
+                    .increment(trace);
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -117,43 +114,18 @@ impl FadeTopApp {
         Ok(())
     }
 
-    fn render_full_app(&mut self, frame: &mut Frame) {
-        let [tab_selector, tab, footer] = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints(vec![
-                Constraint::Fill(1),
-                Constraint::Fill(5),
-                Constraint::Length(1),
-            ])
-            .areas(frame.area());
-        let [timeline, locals] = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints(vec![Constraint::Fill(4), Constraint::Fill(1)])
-            .areas(tab);
-        frame.render_stateful_widget(ThreadSelectionWidget {}, tab_selector, &mut self.app_state);
-        frame.render_stateful_widget(TimelineWidget {}, timeline, &mut self.app_state);
-        frame.render_stateful_widget(LocalVariableWidget {}, locals, &mut self.app_state);
-        frame.render_widget(Footer {}, footer);
-    }
-
     pub async fn run<S: SamplerOps>(
         mut self,
-        mut terminal: DefaultTerminal,
+        terminal: DefaultTerminal,
         sampler: S,
     ) -> Result<(), Error> {
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<UpdateEvent>(2);
 
         self.run_event_senders(event_tx, sampler)?;
 
-        while self.app_state.is_running() {
-            terminal.draw(|frame| self.render_full_app(frame))?;
-            match event_rx.recv().await {
-                None => {
-                    break;
-                }
-                Some(event) => event.update_state(&mut self)?,
-            };
-        }
+        self.app_state
+            .run_until_error(terminal, &mut event_rx)
+            .await?;
         Ok(())
     }
 }

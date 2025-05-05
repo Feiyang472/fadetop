@@ -1,6 +1,6 @@
 [package]
 name = "ui"
-version = "0.1.0"
+version = "0.1.2"
 description = "An example generated using the simple template"
 authors = ["feiyang <feiyangc@outlook.com>"]
 license = "MIT"
