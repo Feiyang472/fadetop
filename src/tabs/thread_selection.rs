@@ -7,7 +7,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph, StatefulWidget, Widget},
 };
-use remoteprocess::Pid;
+use remoteprocess::{Pid, Tid};
 
 use crate::priority::{SpiedRecordQueue, SpiedRecordQueueMap, ThreadInfo};
 
@@ -56,21 +56,26 @@ impl ThreadSelectionState {
         }
     }
 
+    fn get_selected_pt(&self) -> (Option<Pid>, Option<Tid>) {
+        if let Some((pid, tinfos)) = self.available_threads.get(self.selected_thread_index.0) {
+            (
+                Some(*pid),
+                tinfos.get(self.selected_thread_index.1).map(|t| t.tid),
+            )
+        } else {
+            (None, None)
+        }
+    }
+
     pub fn select_thread<'a>(
         &self,
         queues: &'a SpiedRecordQueueMap,
     ) -> Option<&'a SpiedRecordQueue> {
-        queues.get(
-            &self
-                .available_threads
-                .get(self.selected_thread_index.0)?
-                .1
-                .get(self.selected_thread_index.1)?
-                .tid,
-        )
+        queues.get(&self.get_selected_pt().1?)
     }
 
     pub fn update_threads(&mut self, qmaps: &SpiedRecordQueueMap) {
+        let (maybe_pid, maybe_tid) = self.get_selected_pt();
         self.available_threads = qmaps
             .iter()
             .map(|(_, q)| q.thread_info.clone())
@@ -79,14 +84,24 @@ impl ThreadSelectionState {
             .sorted_by(|(pid1, _), (pid2, _)| pid1.cmp(pid2))
             .collect();
 
-        self.selected_thread_index = (
-            self.selected_thread_index.0 % self.available_threads.len().max(1),
-            self.selected_thread_index.1
-                % (self
-                    .available_threads
-                    .get(self.selected_thread_index.0)
-                    .map_or(1, |(_, threads)| threads.len().max(1))),
-        );
+        self.selected_thread_index.0 = if let Some(new_pindex) = maybe_pid.and_then(|pid_orig| {
+            self.available_threads
+                .iter()
+                .position(|(pid, _)| *pid == pid_orig)
+        }) {
+            let ts = &self.available_threads[new_pindex].1;
+            self.selected_thread_index.1 = if let Some(new_tindex) =
+                maybe_tid.and_then(|tid_orig| ts.iter().position(|tinfo| tinfo.tid == tid_orig))
+            {
+                new_tindex
+            } else {
+                self.selected_thread_index.1 % ts.len().max(1)
+            };
+            new_pindex
+        } else {
+            self.selected_thread_index.1 = 0;
+            self.selected_thread_index.0 % self.available_threads.len().max(1)
+        };
     }
 }
 
