@@ -36,19 +36,12 @@ pub struct ThreadSelectionWidget {
 
 impl ThreadSelectionState {
     pub fn handle_focused_event(&mut self, key: &KeyEvent) {
+        let (pi, ti) = &mut self.selected_thread_index;
         match key.code {
-            event::KeyCode::Right => {
-                self.selected_thread_index.1 = self.selected_thread_index.1.saturating_add(1)
-            }
-            event::KeyCode::Left => {
-                self.selected_thread_index.1 = self.selected_thread_index.1.saturating_sub(1)
-            }
-            event::KeyCode::Down => {
-                self.selected_thread_index.0 = self.selected_thread_index.0.saturating_add(1)
-            }
-            event::KeyCode::Up => {
-                self.selected_thread_index.0 = self.selected_thread_index.0.saturating_sub(1)
-            }
+            event::KeyCode::Right => *ti = ti.saturating_add(1),
+            event::KeyCode::Left => *ti = ti.saturating_sub(1),
+            event::KeyCode::Down => *pi = pi.saturating_add(1),
+            event::KeyCode::Up => *pi = pi.saturating_sub(1),
             event::KeyCode::Char('p') => {
                 self.show_processes ^= true;
             }
@@ -57,10 +50,11 @@ impl ThreadSelectionState {
     }
 
     fn get_selected_pt(&self) -> (Option<Pid>, Option<Tid>) {
-        if let Some((pid, tinfos)) = self.available_threads.get(self.selected_thread_index.0) {
+        let (pi, ti) = self.selected_thread_index;
+        if let Some((pid, tinfos)) = self.available_threads.get(pi) {
             (
                 Some(*pid),
-                tinfos.get(self.selected_thread_index.1).map(|t| t.tid),
+                tinfos.get(ti).map(|t| t.tid),
             )
         } else {
             (None, None)
@@ -83,24 +77,26 @@ impl ThreadSelectionState {
             .into_iter()
             .sorted_by(|(pid1, _), (pid2, _)| pid1.cmp(pid2))
             .collect();
+        
+        let (pi, ti) = &mut self.selected_thread_index;
 
-        self.selected_thread_index.0 = if let Some(new_pindex) = maybe_pid.and_then(|pid_orig| {
+        *pi = if let Some(new_pindex) = maybe_pid.and_then(|pid_orig| {
             self.available_threads
                 .iter()
                 .position(|(pid, _)| *pid == pid_orig)
         }) {
             let ts = &self.available_threads[new_pindex].1;
-            self.selected_thread_index.1 = if let Some(new_tindex) =
+            *ti = if let Some(new_tindex) =
                 maybe_tid.and_then(|tid_orig| ts.iter().position(|tinfo| tinfo.tid == tid_orig))
             {
                 new_tindex
             } else {
-                self.selected_thread_index.1 % ts.len().max(1)
+                *ti % ts.len().max(1)
             };
             new_pindex
         } else {
-            self.selected_thread_index.1 = 0;
-            self.selected_thread_index.0 % self.available_threads.len().max(1)
+            *ti = 0;
+            *pi % self.available_threads.len().max(1)
         };
     }
 }
