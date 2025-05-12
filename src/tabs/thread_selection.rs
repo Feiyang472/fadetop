@@ -52,10 +52,7 @@ impl ThreadSelectionState {
     fn get_selected_pt(&self) -> (Option<Pid>, Option<Tid>) {
         let (pi, ti) = self.selected_thread_index;
         if let Some((pid, tinfos)) = self.available_threads.get(pi) {
-            (
-                Some(*pid),
-                tinfos.get(ti).map(|t| t.tid),
-            )
+            (Some(*pid), tinfos.get(ti).map(|t| t.tid))
         } else {
             (None, None)
         }
@@ -77,7 +74,7 @@ impl ThreadSelectionState {
             .into_iter()
             .sorted_by(|(pid1, _), (pid2, _)| pid1.cmp(pid2))
             .collect();
-        
+
         let (pi, ti) = &mut self.selected_thread_index;
 
         *pi = if let Some(new_pindex) = maybe_pid.and_then(|pid_orig| {
@@ -147,43 +144,35 @@ impl StatefulWidget for ThreadSelectionWidget {
             area
         };
 
-        let thread_lines = state
-            .available_threads
-            .get(state.selected_thread_index.0)
-            .map_or_else(
-                || Vec::new(),
-                |(_, thread_infos)| {
-                    thread_infos
-                        .iter()
-                        .enumerate()
-                        .map(|(j, tinfo)| {
-                            let mut style = Style::default();
-                            let mut padding = ('[', ']');
-                            if j == state.selected_thread_index.1 {
-                                style = style.bg(Color::default()).fg(Color::Blue).bold();
-                                if self.focused {
-                                    padding = ('←', '→');
-                                }
-                            }
-                            Line::styled(
-                                match tinfo.name {
-                                    Some(ref name) => format!("{}{}{}", padding.0, name, padding.1),
-                                    None => format!("{}{:08x}{}", padding.0, tinfo.tid, padding.1),
-                                },
-                                style,
-                            )
-                        })
-                        .collect()
-                },
-            );
+        let (pi, ti) = state.selected_thread_index;
 
-        Paragraph::new(thread_lines)
-            .block(Block::new())
-            .scroll((
-                get_scroll(state.selected_thread_index.1 as u16, area.height),
-                0,
-            ))
-            .render(threads_tab, buf);
+        state.available_threads.get(pi).map(|(_, thread_infos)| {
+            let thread_lines = thread_infos
+                .iter()
+                .enumerate()
+                .map(|(j, tinfo)| {
+                    let mut style = Style::default();
+                    let mut padding = ('[', ']');
+                    if j == ti {
+                        style = style.bg(Color::default()).fg(Color::Blue).bold();
+                        if self.focused {
+                            padding = ('←', '→');
+                        }
+                    }
+                    Line::styled(
+                        match tinfo.name {
+                            Some(ref name) => format!("{}{}{}", padding.0, name, padding.1),
+                            None => format!("{}{:08x}{}", padding.0, tinfo.tid, padding.1),
+                        },
+                        style,
+                    )
+                })
+                .collect::<Vec<Line>>();
+            Paragraph::new(thread_lines)
+                .block(Block::new())
+                .scroll((get_scroll(ti as u16, area.height), 0))
+                .render(threads_tab, buf);
+        });
     }
 }
 

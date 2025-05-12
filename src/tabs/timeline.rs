@@ -154,12 +154,9 @@ impl StatefulWidgetExt for TimelineWidget<'_> {
                 Style::default()
             })
             .title(
-                Line::from(format!(
-                    "❮{:#?}❯",
-                    viewport_bound.width
-                ))
-                .bold()
-                .centered(),
+                Line::from(format!("❮{:#?}❯", viewport_bound.width))
+                    .bold()
+                    .centered(),
             )
             .title(
                 Line::from(match viewport_bound.right {
