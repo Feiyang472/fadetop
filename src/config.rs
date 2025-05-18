@@ -12,7 +12,7 @@ fn default_sampling_rate() -> u64 {
 }
 
 fn default_window_width() -> Duration {
-    Duration::from_secs(100)
+    Duration::from_secs(128)
 }
 
 fn default_subprocesses() -> bool {

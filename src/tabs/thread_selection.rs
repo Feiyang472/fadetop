@@ -7,7 +7,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Borders, Paragraph, StatefulWidget, Widget},
 };
-use remoteprocess::Pid;
+use remoteprocess::{Pid, Tid};
 
 use crate::priority::{SpiedRecordQueue, SpiedRecordQueueMap, ThreadInfo};
 
@@ -36,19 +36,12 @@ pub struct ThreadSelectionWidget {
 
 impl ThreadSelectionState {
     pub fn handle_focused_event(&mut self, key: &KeyEvent) {
+        let (pi, ti) = &mut self.selected_thread_index;
         match key.code {
-            event::KeyCode::Right => {
-                self.selected_thread_index.1 = self.selected_thread_index.1.saturating_add(1)
-            }
-            event::KeyCode::Left => {
-                self.selected_thread_index.1 = self.selected_thread_index.1.saturating_sub(1)
-            }
-            event::KeyCode::Down => {
-                self.selected_thread_index.0 = self.selected_thread_index.0.saturating_add(1)
-            }
-            event::KeyCode::Up => {
-                self.selected_thread_index.0 = self.selected_thread_index.0.saturating_sub(1)
-            }
+            event::KeyCode::Right => *ti = ti.saturating_add(1),
+            event::KeyCode::Left => *ti = ti.saturating_sub(1),
+            event::KeyCode::Down => *pi = pi.saturating_add(1),
+            event::KeyCode::Up => *pi = pi.saturating_sub(1),
             event::KeyCode::Char('p') => {
                 self.show_processes ^= true;
             }
@@ -56,21 +49,24 @@ impl ThreadSelectionState {
         }
     }
 
+    fn get_selected_pt(&self) -> (Option<Pid>, Option<Tid>) {
+        let (pi, ti) = self.selected_thread_index;
+        if let Some((pid, tinfos)) = self.available_threads.get(pi) {
+            (Some(*pid), tinfos.get(ti).map(|t| t.tid))
+        } else {
+            (None, None)
+        }
+    }
+
     pub fn select_thread<'a>(
         &self,
         queues: &'a SpiedRecordQueueMap,
     ) -> Option<&'a SpiedRecordQueue> {
-        queues.get(
-            &self
-                .available_threads
-                .get(self.selected_thread_index.0)?
-                .1
-                .get(self.selected_thread_index.1)?
-                .tid,
-        )
+        queues.get(&self.get_selected_pt().1?)
     }
 
     pub fn update_threads(&mut self, qmaps: &SpiedRecordQueueMap) {
+        let (maybe_pid, maybe_tid) = self.get_selected_pt();
         self.available_threads = qmaps
             .iter()
             .map(|(_, q)| q.thread_info.clone())
@@ -79,14 +75,26 @@ impl ThreadSelectionState {
             .sorted_by(|(pid1, _), (pid2, _)| pid1.cmp(pid2))
             .collect();
 
-        self.selected_thread_index = (
-            self.selected_thread_index.0 % self.available_threads.len().max(1),
-            self.selected_thread_index.1
-                % (self
-                    .available_threads
-                    .get(self.selected_thread_index.0)
-                    .map_or(1, |(_, threads)| threads.len().max(1))),
-        );
+        let (pi, ti) = &mut self.selected_thread_index;
+
+        *pi = if let Some(new_pindex) = maybe_pid.and_then(|pid_orig| {
+            self.available_threads
+                .iter()
+                .position(|(pid, _)| *pid == pid_orig)
+        }) {
+            let ts = &self.available_threads[new_pindex].1;
+            *ti = if let Some(new_tindex) =
+                maybe_tid.and_then(|tid_orig| ts.iter().position(|tinfo| tinfo.tid == tid_orig))
+            {
+                new_tindex
+            } else {
+                *ti % ts.len().max(1)
+            };
+            new_pindex
+        } else {
+            *ti = 0;
+            *pi % self.available_threads.len().max(1)
+        };
     }
 }
 
@@ -136,43 +144,35 @@ impl StatefulWidget for ThreadSelectionWidget {
             area
         };
 
-        let thread_lines = state
-            .available_threads
-            .get(state.selected_thread_index.0)
-            .map_or_else(
-                || Vec::new(),
-                |(_, thread_infos)| {
-                    thread_infos
-                        .iter()
-                        .enumerate()
-                        .map(|(j, tinfo)| {
-                            let mut style = Style::default();
-                            let mut padding = ('[', ']');
-                            if j == state.selected_thread_index.1 {
-                                style = style.bg(Color::default()).fg(Color::Blue).bold();
-                                if self.focused {
-                                    padding = ('←', '→');
-                                }
-                            }
-                            Line::styled(
-                                match tinfo.name {
-                                    Some(ref name) => format!("{}{}{}", padding.0, name, padding.1),
-                                    None => format!("{}{:08x}{}", padding.0, tinfo.tid, padding.1),
-                                },
-                                style,
-                            )
-                        })
-                        .collect()
-                },
-            );
+        let (pi, ti) = state.selected_thread_index;
 
-        Paragraph::new(thread_lines)
-            .block(Block::new())
-            .scroll((
-                get_scroll(state.selected_thread_index.1 as u16, area.height),
-                0,
-            ))
-            .render(threads_tab, buf);
+        state.available_threads.get(pi).map(|(_, thread_infos)| {
+            let thread_lines = thread_infos
+                .iter()
+                .enumerate()
+                .map(|(j, tinfo)| {
+                    let mut style = Style::default();
+                    let mut padding = ('[', ']');
+                    if j == ti {
+                        style = style.bg(Color::default()).fg(Color::Blue).bold();
+                        if self.focused {
+                            padding = ('←', '→');
+                        }
+                    }
+                    Line::styled(
+                        match tinfo.name {
+                            Some(ref name) => format!("{}{}{}", padding.0, name, padding.1),
+                            None => format!("{}{:08x}{}", padding.0, tinfo.tid, padding.1),
+                        },
+                        style,
+                    )
+                })
+                .collect::<Vec<Line>>();
+            Paragraph::new(thread_lines)
+                .block(Block::new())
+                .scroll((get_scroll(ti as u16, area.height), 0))
+                .render(threads_tab, buf);
+        });
     }
 }
 
