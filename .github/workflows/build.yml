@@ -45,7 +45,7 @@ jobs:
           rustup toolchain uninstall stable && rustup toolchain install stable
           rustup target add ${{ matrix.platform.target }}
           python3 -m pip install --upgrade maturin
-          apt-get install -y liblzma-dev libunwind-dev libunwind8
+          apt-get update && apt-get install -y liblzma-dev libunwind-dev libunwind8
           maturin build --release -o dist --target ${{ matrix.platform.target }}
       - name: Upload wheels
         uses: actions/upload-artifact@v4
