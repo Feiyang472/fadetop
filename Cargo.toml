@@ -16,7 +16,7 @@ members = [".", "examples/ui"]
 anyhow = { workspace = true }
 clap = { version = "4.5.36", features = ["string"] }
 config = { version = "0.15.11", features = ["toml"] }
-py-spy = { workspace = true }
+py-spy = { workspace = true, features = ["unwind"] }
 ratatui = { workspace = true }
 tokio = { workspace = true }
 remoteprocess = "0.5.0"
