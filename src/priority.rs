@@ -321,6 +321,7 @@ mod tests {
             short_filename: Some("test.py".to_string()),
             locals: None,
             is_entry: false,
+            is_shim_entry: false,
         };
 
         let trace = StackTrace {
