@@ -8,6 +8,7 @@ authors = [
   { name = "Feiyang472"}
 ]
 license = { file = "LICENSE" }
+dynamic = ["version"]
 
 [project.urls]
 Homepage = "https://github.com/Feiyang472/fadetop"

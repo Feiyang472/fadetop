@@ -21,11 +21,19 @@ Replace `$PID_OF_YOUR_RUNNING_PYTHON_PROCESS` with the process ID of the Python 
 ## Installation
 Fadetop is published to pypi as a binary package under name `pyfadetop` (the binary will still be `fadetop`).
 Binaries are built for linux, macos, and windows.
+
+You can run fadetop directly in a uv-managed tool environment
 ```
-pip install pyfadetop
+uvx --from pyfadetop fadetop
+```
+Or you can install fadetop manually.
+```
+uv pip install pyfadetop
 ```
 
 Alternatively fadetop can be built from source using `cargo build`.
+
+Running `fadetop` requires the same permissions as py-spy with regards to [ptrace non-child processes](https://github.com/benfred/py-spy?tab=readme-ov-file#when-do-you-need-to-run-as-sudo). In most cases, the user needs to set `/proc/sys/kernel/yama/ptrace_scope` to be `0`, or run `fadetop` as `sudo`. In Docker-based environments, including when running under Kubernetes, you might need to start your container with `--cap-add=SYS_PTRACE`.
 
 ## Configuration
 Fadetop can be configured using both a toml file (named `fadetop_config.toml` or `$FADETOP_CONFIG` if set) and environment variables, where the latter overrides the former.
