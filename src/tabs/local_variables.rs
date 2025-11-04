@@ -135,7 +135,7 @@ impl StatefulWidget for LocalVariableWidget<'_> {
 }
 
 impl StatefulWidgetExt for LocalVariableWidget<'_> {
-    fn get_block(&self, state: &mut Self::State) -> Block {
+    fn get_block(&self, state: &mut Self::State) -> Block<'_> {
         let block = Block::default()
             .title(Line::from("Live Stack").bold().left_aligned())
             .borders(Borders::ALL)

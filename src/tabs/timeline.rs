@@ -142,7 +142,7 @@ impl<'q> TimelineWidget<'q> {
 }
 
 impl StatefulWidgetExt for TimelineWidget<'_> {
-    fn get_block(&self, viewport_bound: &mut Self::State) -> Block {
+    fn get_block(&self, viewport_bound: &mut Self::State) -> Block<'_> {
         let now = Instant::now();
 
         Block::default()
