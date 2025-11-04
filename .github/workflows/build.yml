@@ -106,7 +106,7 @@ jobs:
         with:
           command: sdist
           args: --out dist
-          before-script-linux: sudo apt-get update && sudo apt-get install -y libunwind-dev libunwind8
+          before-script-linux: sudo apt-get update && sudo apt-get install -y libunwind-dev libunwind8 liblzma-dev
       - name: Run tests
         run: cargo test --verbose
       - name: Upload sdist
