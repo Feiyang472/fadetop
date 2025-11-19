@@ -4,6 +4,7 @@ use crate::errors::AppError;
 use crate::priority::SpiedRecordQueueMap;
 use crate::{state::AppState, tabs::terminal_event::UpdateEvent};
 use anyhow::Error;
+use futures::StreamExt;
 use py_spy::sampler;
 use ratatui::{DefaultTerminal, crossterm};
 
@@ -53,9 +54,18 @@ pub struct FadeTopApp {
     update_period: Duration,
 }
 
-fn send_terminal_event(tx: tokio::sync::mpsc::Sender<UpdateEvent>) -> Result<(), Error> {
+async fn send_terminal_event(tx: tokio::sync::mpsc::Sender<UpdateEvent>) -> Result<(), Error> {
+    let mut reader = crossterm::event::EventStream::new();
+
     loop {
-        tx.blocking_send(UpdateEvent::Input(crossterm::event::read()?))?;
+        match reader.next().await {
+            Some(event) => {
+                tx.send(UpdateEvent::Input(event?)).await?;
+            }
+            None => {
+                continue;
+            }
+        }
     }
 }
 
@@ -81,15 +91,13 @@ impl FadeTopApp {
         sender: tokio::sync::mpsc::Sender<UpdateEvent>,
         sampler: S,
     ) -> Result<(), Error> {
-        // Existing terminal event sender
-        thread::spawn({
-            let cloned_sender = sender.clone();
-            move || {
-                send_terminal_event(cloned_sender).unwrap();
+        let cloned_sender = sender.clone();
+        tokio::spawn({
+            async move {
+                let _ = send_terminal_event(cloned_sender).await;
             }
         });
 
-        // Existing sampler event sender
         let queue = Arc::clone(&self.app_state.record_queue_map);
         thread::spawn({
             move || {
@@ -99,7 +107,6 @@ impl FadeTopApp {
 
         let update_period = self.update_period;
 
-        // New async event sender
         let async_sender = sender.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(update_period);
