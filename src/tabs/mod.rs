@@ -23,7 +23,7 @@ impl<W: Widget> Widget for Blocked<W> {
 }
 
 pub trait StatefulWidgetExt: StatefulWidget + Sized {
-    fn get_block(&self, _state: &mut Self::State) -> Block {
+    fn get_block(&self, _state: &mut Self::State) -> Block<'_> {
         Default::default()
     }
 
