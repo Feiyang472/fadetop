@@ -38,6 +38,7 @@ impl SamplerOps for MockSampler {
                         },
                     ]),
                     is_entry: false,
+                    is_shim_entry: false,
                 };
 
                 let trace = StackTrace {

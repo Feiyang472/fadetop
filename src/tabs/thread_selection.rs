@@ -177,7 +177,7 @@ impl StatefulWidget for ThreadSelectionWidget {
 }
 
 impl StatefulWidgetExt for ThreadSelectionWidget {
-    fn get_block(&self, state: &mut Self::State) -> Block {
+    fn get_block(&self, state: &mut Self::State) -> Block<'_> {
         let mut block = Block::default()
             .title("Threads")
             .borders(Borders::ALL)
