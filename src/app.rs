@@ -91,10 +91,10 @@ impl FadeTopApp {
         sender: tokio::sync::mpsc::Sender<UpdateEvent>,
         sampler: S,
     ) -> Result<(), Error> {
-        let cloned_sender = sender.clone();
+        let term_sender = sender.clone();
         tokio::spawn({
             async move {
-                let _ = send_terminal_event(cloned_sender).await;
+                let _ = send_terminal_event(term_sender).await;
             }
         });
 
@@ -107,12 +107,11 @@ impl FadeTopApp {
 
         let update_period = self.update_period;
 
-        let async_sender = sender.clone();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(update_period);
             loop {
                 interval.tick().await;
-                if async_sender.send(UpdateEvent::Periodic).await.is_err() {
+                if sender.send(UpdateEvent::Periodic).await.is_err() {
                     break;
                 }
             }
