@@ -4,45 +4,59 @@ FadeTop is a real-time in-terminal visualiser for Python stack samples.
 
 ![](https://github.com/Feiyang472/fadetop/actions/workflows/build.yml/badge.svg)
 
-Watch as call stacks are entered and exited, threads get spawn and destroyed, iterations proceed, or loss functions optimised.
+Watch as call stacks are entered and exited, threads spawn and terminate, iterations proceed, and loss functions get optimised.
 ![Demo](https://raw.githubusercontent.com/Feiyang472/fadetop/refs/heads/main/.github/local.gif)
 
 FadeTop relies on **py-spy** for generating stack traces and **ratatui** for its front-end interface.
 
 ## Usage
-To use FadeTop, run the following command:
 
 ```sh
+# Attach to a specific Python process by PID
 fadetop $PID_OF_YOUR_RUNNING_PYTHON_PROCESS
-```
 
-Replace `$PID_OF_YOUR_RUNNING_PYTHON_PROCESS` with the process ID of the Python program you want to analyze.
+# Or run without arguments to open a dashboard that discovers running Python processes
+fadetop
+
+# Run the demo with mock data (no real process needed)
+fadetop demo
+```
 
 ## Installation
-Fadetop is published to pypi as a binary package under name `pyfadetop` (the binary will still be `fadetop`).
-Binaries are built for linux, macos, and windows.
 
-You can run fadetop directly in a uv-managed tool environment
+FadeTop is published to PyPI as `pyfadetop`. Pre-built binaries are available for Linux, macOS, and Windows.
+
+Run directly with uv:
+```sh
+uvx pyfadetop
 ```
-uvx --from pyfadetop fadetop
-```
-Or you can install fadetop manually.
-```
+
+Or install it:
+```sh
 uv pip install pyfadetop
+# or
+pip install pyfadetop
 ```
 
-Alternatively fadetop can be built from source using `cargo build`.
+Alternatively, build from source with `cargo build`.
 
-Running `fadetop` requires the same permissions as py-spy with regards to [ptrace non-child processes](https://github.com/benfred/py-spy?tab=readme-ov-file#when-do-you-need-to-run-as-sudo). In most cases, the user needs to set `/proc/sys/kernel/yama/ptrace_scope` to be `0`, or run `fadetop` as `sudo`. In Docker-based environments, including when running under Kubernetes, you might need to start your container with `--cap-add=SYS_PTRACE`.
+### Permissions
+
+FadeTop requires the same permissions as py-spy for [ptrace](https://github.com/benfred/py-spy?tab=readme-ov-file#when-do-you-need-to-run-as-sudo). On Linux, either:
+- Set `/proc/sys/kernel/yama/ptrace_scope` to `0`, or
+- Run as `sudo`
+
+In Docker/Kubernetes environments, add `--cap-add=SYS_PTRACE` to your container.
 
 ## Configuration
-Fadetop can be configured using both a toml file (named `fadetop_config.toml` or `$FADETOP_CONFIG` if set) and environment variables, where the latter overrides the former.
 
-You can check your configuration by running `fadetop --help`
+FadeTop can be configured via a TOML file (`fadetop_config.toml`, or set `$FADETOP_CONFIG`) and environment variables. Environment variables take precedence.
 
-## Configuration Examples
+Check your current configuration with `fadetop show-config`.
 
-### Example using TOML Config File
+### Examples
+
+TOML config file:
 ```toml
 # Sampling rate in Hz (samples per second)
 sampling_rate = 120
@@ -62,7 +76,7 @@ at_least = "70s"
 ratio = 1.0
 ```
 
-### Example using Environment Variables
+Environment variables:
 ```bash
 export FADETOP_SAMPLING_RATE=120
 ```

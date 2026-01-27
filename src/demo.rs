@@ -2,15 +2,16 @@ use std::sync::{Arc, RwLock};
 use std::thread;
 
 use anyhow::Error;
-use fadetop::app::SamplerOps;
-use fadetop::config::AppConfig;
-use fadetop::priority::SpiedRecordQueueMap;
-use fadetop::processes::{ProcessDiscovery, PythonProcess};
-use fadetop::sample::{Frame, LocalVariable, Pid, StackTrace};
-use fadetop::tabs::process_selection::ProcessSelectionState;
+
+use crate::app::SamplerOps;
+use crate::config::AppConfig;
+use crate::priority::SpiedRecordQueueMap;
+use crate::processes::{ProcessDiscovery, PythonProcess};
+use crate::sample::{Frame, LocalVariable, Pid, StackTrace};
+use crate::tabs::process_selection::ProcessSelectionState;
 
 /// Mock process discovery that returns dummy processes for the demo
-struct MockProcessDiscovery;
+pub struct MockProcessDiscovery;
 
 impl ProcessDiscovery for MockProcessDiscovery {
     fn discover() -> Vec<PythonProcess> {
@@ -40,7 +41,7 @@ impl ProcessDiscovery for MockProcessDiscovery {
 }
 
 #[derive(Clone, Debug, Default)]
-struct MockSampler {}
+pub struct MockSampler {}
 
 impl SamplerOps for MockSampler {
     fn from_config_and_id(_config: &AppConfig, _pid: Pid) -> Result<Self, Error> {
@@ -162,8 +163,7 @@ impl MockSampler {
     }
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), Error> {
+pub async fn run() -> Result<(), Error> {
     let configs = AppConfig::from_configs()?;
     let terminal = ratatui::init();
 

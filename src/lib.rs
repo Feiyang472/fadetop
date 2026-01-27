@@ -1,6 +1,8 @@
 pub mod app;
 pub mod cli;
 pub mod config;
+#[cfg(feature = "demo")]
+pub mod demo;
 pub mod errors;
 pub mod priority;
 pub mod processes;

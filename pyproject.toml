@@ -16,3 +16,4 @@ Repository = "https://github.com/Feiyang472/fadetop"
 
 [tool.maturin]
 bindings = "bin"
+features = ["demo"]
