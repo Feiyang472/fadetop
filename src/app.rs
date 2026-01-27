@@ -1,17 +1,19 @@
 use crate::config::AppConfig;
-
-use crate::errors::AppError;
 use crate::priority::SpiedRecordQueueMap;
-use crate::{state::AppState, tabs::terminal_event::UpdateEvent};
+use crate::processes::ProcessDiscovery;
+use crate::state::ProfilingState;
+use crate::tabs::process_selection::{ProcessSelectionAction, ProcessSelectionState};
+use crate::tabs::terminal_event::UpdateEvent;
 use anyhow::Error;
 use futures::StreamExt;
-use py_spy::sampler;
-use ratatui::{DefaultTerminal, crossterm};
+use ratatui::{DefaultTerminal, Frame, crossterm};
+use remoteprocess::Pid;
 
 use std::env;
+use std::future::Future;
+use std::sync::Arc;
 use std::sync::RwLock;
 use std::time::Duration;
-use std::{sync::Arc, thread};
 
 impl AppConfig {
     pub fn from_configs() -> Result<Self, Error> {
@@ -25,33 +27,13 @@ impl AppConfig {
     }
 }
 
-pub trait SamplerOps: Send + 'static {
-    fn push_to_queue(self, record_queue_map: Arc<RwLock<SpiedRecordQueueMap>>)
-    -> Result<(), Error>;
-}
-
-impl SamplerOps for sampler::Sampler {
+pub trait SamplerOps: Send + 'static + Sized {
     fn push_to_queue(
         self,
         record_queue_map: Arc<RwLock<SpiedRecordQueueMap>>,
-    ) -> Result<(), Error> {
-        for sample in self {
-            for trace in sample.traces.iter() {
-                record_queue_map
-                    .write()
-                    .map_err(|_| AppError::SamplerSenderError)?
-                    .increment(trace);
-            }
-        }
+    ) -> impl Future<Output = Result<(), Error>> + Send;
 
-        Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct FadeTopApp {
-    pub app_state: AppState,
-    update_period: Duration,
+    fn from_config_and_id(config: &AppConfig, pid: Pid) -> Result<Self, Error>;
 }
 
 async fn send_terminal_event(tx: tokio::sync::mpsc::Sender<UpdateEvent>) -> Result<(), Error> {
@@ -69,45 +51,163 @@ async fn send_terminal_event(tx: tokio::sync::mpsc::Sender<UpdateEvent>) -> Resu
     }
 }
 
-impl FadeTopApp {
-    pub fn new(configs: AppConfig) -> Self {
-        let mut app_state = AppState::new();
-        app_state
-            .record_queue_map
-            .write()
-            .unwrap()
-            .with_rules(configs.rules);
+impl ProcessSelectionState {
+    /// Run the app starting from process selection (landing page mode)
+    pub async fn run_with_selection<S: SamplerOps, D: ProcessDiscovery>(
+        &mut self,
+        configs: &AppConfig,
+        mut terminal: DefaultTerminal,
+    ) -> Result<(), Error> {
+        self.refresh_processes::<D>();
 
-        app_state.viewport_bound.width = configs.window_width;
-
-        Self {
-            app_state,
-            update_period: configs.update_period,
+        loop {
+            match self.run_selection_loop::<D>(&mut terminal).await? {
+                SelectionResult::Quit => return Ok(()),
+                SelectionResult::AttachTo(pid) => {
+                    match S::from_config_and_id(configs, pid) {
+                        Ok(sampler) => {
+                            ProfilingState::new(configs)
+                                .run_attached(&mut terminal, sampler)
+                                .await?
+                        }
+                        Err(e) => {
+                            self.set_error(format!("Failed to attach to {}: {}", pid, e));
+                        }
+                    }
+                    self.refresh_processes::<D>();
+                }
+            }
         }
+    }
+    /// Run the process selection UI loop
+    async fn run_selection_loop<D: ProcessDiscovery>(
+        &mut self,
+        terminal: &mut DefaultTerminal,
+    ) -> Result<SelectionResult, Error> {
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<UpdateEvent>(2);
+
+        // Terminal event sender
+        let term_handle = tokio::spawn({
+            let tx = event_tx.clone();
+            async move {
+                let _ = send_terminal_event(tx).await;
+            }
+        });
+
+        // Periodic refresh
+        let update_period = Duration::from_secs(2);
+        let periodic_handle = tokio::spawn({
+            let tx = event_tx;
+            async move {
+                let mut interval = tokio::time::interval(update_period);
+                loop {
+                    interval.tick().await;
+                    if tx.send(UpdateEvent::Periodic).await.is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        let result = loop {
+            terminal.draw(|frame| self.render_selection(frame))?;
+
+            match event_rx.recv().await {
+                None => break Ok(SelectionResult::Quit),
+                Some(UpdateEvent::Input(event)) => {
+                    if let crossterm::event::Event::Key(key) = event {
+                        match self.handle_focused_event(&key) {
+                            ProcessSelectionAction::AttachTo(pid) => {
+                                break Ok(SelectionResult::AttachTo(pid));
+                            }
+                            ProcessSelectionAction::Quit => {
+                                break Ok(SelectionResult::Quit);
+                            }
+                            ProcessSelectionAction::Refresh => {
+                                self.refresh_processes::<D>();
+                            }
+                            ProcessSelectionAction::None => {}
+                        }
+                    }
+                }
+                Some(UpdateEvent::Periodic) => {
+                    self.refresh_processes::<D>();
+                }
+                Some(UpdateEvent::Error(e)) => break Err(e.into()),
+            }
+        };
+
+        term_handle.abort();
+        periodic_handle.abort();
+
+        result
+    }
+    fn render_selection(&mut self, frame: &mut Frame) {
+        use crate::tabs::StatefulWidgetExt;
+        use crate::tabs::process_selection::ProcessSelectionWidget;
+        frame.render_stateful_widget(ProcessSelectionWidget.blocked(), frame.area(), self);
+    }
+}
+
+/// Result from process selection
+enum SelectionResult {
+    Quit,
+    AttachTo(Pid),
+}
+
+struct TaskHandles {
+    term_handle: tokio::task::JoinHandle<()>,
+    periodic_handle: tokio::task::JoinHandle<()>,
+    sampler_handle: tokio::task::JoinHandle<()>,
+}
+
+impl TaskHandles {
+    fn abort(self) {
+        self.term_handle.abort();
+        self.periodic_handle.abort();
+        self.sampler_handle.abort();
+    }
+}
+
+impl ProfilingState {
+    async fn run_attached<S: SamplerOps>(
+        &mut self,
+        terminal: &mut DefaultTerminal,
+        sampler: S,
+    ) -> Result<(), Error> {
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<UpdateEvent>(2);
+        let handles = self.run_event_senders(event_tx, sampler);
+
+        let result = self.run_until_error(terminal, &mut event_rx).await;
+
+        // Abort spawned tasks before returning to avoid lingering EventStream
+        handles.abort();
+
+        result
     }
 
     fn run_event_senders<S: SamplerOps>(
         &self,
         sender: tokio::sync::mpsc::Sender<UpdateEvent>,
         sampler: S,
-    ) -> Result<(), Error> {
-        let term_sender = sender.clone();
-        tokio::spawn({
+    ) -> TaskHandles {
+        // Terminal event sender
+        let term_handle = tokio::spawn({
+            let tx = sender.clone();
             async move {
-                let _ = send_terminal_event(term_sender).await;
+                let _ = send_terminal_event(tx).await;
             }
         });
 
-        let queue = Arc::clone(&self.app_state.record_queue_map);
-        thread::spawn({
-            move || {
-                sampler.push_to_queue(queue).unwrap();
-            }
+        // Sampler task
+        let queue = Arc::clone(&self.record_queue_map);
+        let sampler_handle = tokio::spawn(async move {
+            let _ = sampler.push_to_queue(queue).await;
         });
 
+        // Periodic refresh
         let update_period = self.update_period;
-
-        tokio::spawn(async move {
+        let periodic_handle = tokio::spawn(async move {
             let mut interval = tokio::time::interval(update_period);
             loop {
                 interval.tick().await;
@@ -117,21 +217,22 @@ impl FadeTopApp {
             }
         });
 
-        Ok(())
+        TaskHandles {
+            term_handle,
+            periodic_handle,
+            sampler_handle,
+        }
     }
 
-    pub async fn run<S: SamplerOps>(
+    /// Run with direct sampler attachment (CLI mode with PID argument)
+    pub async fn run_direct<S: SamplerOps>(
         mut self,
-        terminal: DefaultTerminal,
+        mut terminal: DefaultTerminal,
         sampler: S,
     ) -> Result<(), Error> {
         let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<UpdateEvent>(2);
+        let _handles = self.run_event_senders(event_tx, sampler);
 
-        self.run_event_senders(event_tx, sampler)?;
-
-        self.app_state
-            .run_until_error(terminal, &mut event_rx)
-            .await?;
-        Ok(())
+        self.run_until_error(&mut terminal, &mut event_rx).await
     }
 }
