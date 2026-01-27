@@ -25,6 +25,9 @@ enum Command {
     SubprocessWorker,
     /// Show the current configuration and exit
     ShowConfig,
+    /// Run the demo with mock data (no real process attachment)
+    #[cfg(feature = "demo")]
+    Demo,
 }
 
 fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
@@ -57,6 +60,12 @@ pub async fn run() -> Result<(), Error> {
     if let Some(Command::ShowConfig) = args.command {
         println!("{:#?}", configs);
         return Ok(());
+    }
+
+    // Handle demo command
+    #[cfg(feature = "demo")]
+    if let Some(Command::Demo) = args.command {
+        return crate::demo::run().await;
     }
 
     let terminal = ratatui::init();
