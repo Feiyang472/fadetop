@@ -1,4 +1,4 @@
-use py_spy::stack_trace::LocalVariable;
+use crate::sample::LocalVariable;
 use ratatui::{
     buffer::Buffer,
     crossterm::event::{self, KeyEvent},

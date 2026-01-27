@@ -1,4 +1,7 @@
-use std::sync::{Arc, RwLock};
+use std::{
+    sync::{Arc, RwLock},
+    time::Duration,
+};
 
 use anyhow::Error;
 use ratatui::{
@@ -12,6 +15,7 @@ use ratatui::{
 use tokio::sync::mpsc::Receiver;
 
 use crate::{
+    config::AppConfig,
     priority::SpiedRecordQueueMap,
     tabs::{
         StatefulWidgetExt,
@@ -22,7 +26,7 @@ use crate::{
     },
 };
 
-// Add a Focus enum to track current focus
+/// Focus within the profiling view
 #[derive(Debug, PartialEq, Eq)]
 pub enum Focus {
     ThreadList,
@@ -30,8 +34,9 @@ pub enum Focus {
     LogView,
 }
 
+/// State for the profiling view (when attached to a process)
 #[derive(Debug)]
-pub struct AppState {
+pub struct ProfilingState {
     focus: Focus,
     thread_selection: ThreadSelectionState,
     pub(super) viewport_bound: ViewPortBounds,
@@ -39,43 +44,49 @@ pub struct AppState {
     pub record_queue_map: Arc<RwLock<SpiedRecordQueueMap>>,
     running: bool,
     ratio: u16,
+    pub update_period: Duration,
 }
 
-impl AppState {
+impl ProfilingState {
     fn quit(&mut self) {
         self.running = false;
     }
 
     pub async fn run_until_error(
         &mut self,
-        mut terminal: DefaultTerminal,
+        terminal: &mut DefaultTerminal,
         rx: &mut Receiver<UpdateEvent>,
     ) -> Result<(), Error> {
         while self.running {
-            terminal.draw(|frame| self.render_full_app(frame))?;
+            terminal.draw(|frame| self.render(frame))?;
             match rx.recv().await {
-                None => {
-                    break;
-                }
+                None => break,
                 Some(event) => event.update_state(self)?,
             };
         }
         Ok(())
     }
 
-    pub fn new() -> Self {
+    pub fn new(config: &AppConfig) -> Self {
+        let mut record_queue_map: SpiedRecordQueueMap = Default::default();
+        record_queue_map.with_rules(config.rules.clone());
+
+        let mut viewport_bound = ViewPortBounds::default();
+        viewport_bound.width = config.window_width;
+
         Self {
             focus: Focus::ThreadList,
             thread_selection: Default::default(),
-            record_queue_map: Default::default(),
-            viewport_bound: Default::default(),
+            viewport_bound,
             local_variable_state: LocalVariableSelection::default(),
+            record_queue_map: Arc::new(RwLock::new(record_queue_map)),
             running: true,
             ratio: 80,
+            update_period: config.update_period,
         }
     }
 
-    fn render_full_app(&mut self, frame: &mut Frame) {
+    pub fn render(&mut self, frame: &mut Frame) {
         let out_block = {
             Block::default()
                 .borders(Borders::NONE)
@@ -148,8 +159,7 @@ impl AppState {
     pub fn handle_crossterm_events(&mut self, term_event: event::Event) -> Result<(), Error> {
         match term_event {
             event::Event::Key(key) => match (key.modifiers, key.code) {
-                // Global shortcuts
-                (_, event::KeyCode::Esc) => Ok(self.quit()),
+                (_, event::KeyCode::Esc | event::KeyCode::Char('q')) => Ok(self.quit()),
                 (_, event::KeyCode::Tab) => {
                     self.focus = match self.focus {
                         Focus::ThreadList => Focus::Timeline,

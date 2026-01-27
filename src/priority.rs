@@ -1,6 +1,4 @@
-use py_spy::stack_trace::Frame;
-use py_spy::stack_trace::LocalVariable;
-use py_spy::stack_trace::StackTrace;
+use crate::sample::{Frame, LocalVariable, StackTrace};
 use remoteprocess::{Pid, Tid};
 use serde::Deserialize;
 use std::cmp::Reverse;
@@ -281,7 +279,6 @@ impl SpiedRecordQueueMap {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use py_spy::stack_trace::StackTrace;
 
     #[test]
     fn test_compare_record() {
@@ -316,11 +313,7 @@ mod tests {
         let frame_template = Frame {
             name: "level0".to_string(),
             filename: "test.py".to_string(),
-            line: 1,
-            module: Some("test".to_string()),
-            short_filename: Some("test.py".to_string()),
             locals: None,
-            is_entry: false,
         };
 
         let trace = StackTrace {
@@ -334,10 +327,6 @@ mod tests {
                 frame_template.clone(),
             ],
             thread_name: None,
-            os_thread_id: None,
-            active: true,
-            owns_gil: false,
-            process_info: None,
         };
 
         queues.increment(&trace);

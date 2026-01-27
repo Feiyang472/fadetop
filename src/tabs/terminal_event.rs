@@ -1,7 +1,7 @@
 use anyhow::Error;
 use ratatui::crossterm;
 
-use crate::{errors::AppError, state::AppState};
+use crate::{errors::AppError, state::ProfilingState};
 
 pub enum UpdateEvent {
     Periodic,
@@ -10,7 +10,7 @@ pub enum UpdateEvent {
 }
 
 impl UpdateEvent {
-    pub fn update_state(self, app_state: &mut AppState) -> Result<(), Error> {
+    pub fn update_state(self, app_state: &mut ProfilingState) -> Result<(), Error> {
         match self {
             UpdateEvent::Input(term_event) => app_state.handle_crossterm_events(term_event),
             UpdateEvent::Periodic => Ok(()),

@@ -1,7 +1,11 @@
 pub mod app;
+pub mod cli;
 pub mod config;
 pub mod errors;
 pub mod priority;
+pub mod processes;
+pub mod sample;
 pub mod ser;
-mod state;
+pub mod state;
+pub mod subprocess_sampler;
 pub mod tabs;
