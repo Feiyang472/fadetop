@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, RwLock};
 use std::thread;
 
@@ -40,22 +41,42 @@ impl ProcessDiscovery for MockProcessDiscovery {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-pub struct MockSampler {}
+#[derive(Clone, Debug)]
+pub struct MockSampler {
+    stop_flag: Arc<AtomicBool>,
+}
+
+impl Default for MockSampler {
+    fn default() -> Self {
+        Self {
+            stop_flag: Arc::new(AtomicBool::new(false)),
+        }
+    }
+}
+
+impl Drop for MockSampler {
+    fn drop(&mut self) {
+        self.stop_flag.store(true, Ordering::Relaxed);
+    }
+}
 
 impl SamplerOps for MockSampler {
     fn from_config_and_id(_config: &AppConfig, _pid: Pid) -> Result<Self, Error> {
-        Ok(MockSampler {})
+        Ok(MockSampler::default())
     }
 
     async fn push_to_queue(self, queue: Arc<RwLock<SpiedRecordQueueMap>>) -> Result<(), Error> {
-        tokio::task::spawn_blocking(move || Self::push_to_queue_sync(queue)).await?
+        let stop_flag = Arc::clone(&self.stop_flag);
+        tokio::task::spawn_blocking(move || Self::push_to_queue_sync(queue, stop_flag)).await?
     }
 }
 
 impl MockSampler {
-    fn push_to_queue_sync(queue: Arc<RwLock<SpiedRecordQueueMap>>) -> Result<(), Error> {
-        loop {
+    fn push_to_queue_sync(
+        queue: Arc<RwLock<SpiedRecordQueueMap>>,
+        stop_flag: Arc<AtomicBool>,
+    ) -> Result<(), Error> {
+        while !stop_flag.load(Ordering::Relaxed) {
             for pid in 0..10 {
                 let frame_template = Frame {
                     name: "level0".to_string(),
@@ -89,15 +110,24 @@ impl MockSampler {
                 };
 
                 for _ in 0..10 {
+                    if stop_flag.load(Ordering::Relaxed) {
+                        return Ok(());
+                    }
                     thread::sleep(std::time::Duration::from_millis(10));
                     queue.write().unwrap().increment(&trace);
                 }
 
                 for _ in 0..10 {
+                    if stop_flag.load(Ordering::Relaxed) {
+                        return Ok(());
+                    }
                     thread::sleep(std::time::Duration::from_millis(10));
                     queue.write().unwrap().increment(&trace);
                 }
                 for _ in 0..10 {
+                    if stop_flag.load(Ordering::Relaxed) {
+                        return Ok(());
+                    }
                     thread::sleep(std::time::Duration::from_millis(10));
 
                     let total_events: usize = queue
@@ -130,6 +160,9 @@ impl MockSampler {
                     });
                 }
 
+                if stop_flag.load(Ordering::Relaxed) {
+                    return Ok(());
+                }
                 thread::sleep(std::time::Duration::from_millis(10));
                 queue.write().unwrap().increment(&StackTrace {
                     frames: vec![
@@ -147,6 +180,9 @@ impl MockSampler {
                 });
 
                 for _ in 0..10 {
+                    if stop_flag.load(Ordering::Relaxed) {
+                        return Ok(());
+                    }
                     thread::sleep(std::time::Duration::from_millis(10));
                     queue.write().unwrap().increment(&StackTrace {
                         frames: vec![Frame {
@@ -160,6 +196,7 @@ impl MockSampler {
                 }
             }
         }
+        Ok(())
     }
 }
 

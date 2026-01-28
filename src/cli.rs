@@ -30,20 +30,17 @@ enum Command {
     Demo,
 }
 
-fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
+fn init_tracing() {
     let file_appender = tracing_appender::rolling::never("/tmp", "fadetop.log");
-    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
-        .with(fmt::layer().with_writer(non_blocking).with_ansi(false))
+        .with(fmt::layer().with_writer(file_appender).with_ansi(false))
         .init();
-
-    guard
 }
 
 pub async fn run() -> Result<(), Error> {
-    let _guard = init_tracing();
+    init_tracing();
     let args = Args::parse();
 
     tracing::debug!(?args, "Parsed command line arguments");
