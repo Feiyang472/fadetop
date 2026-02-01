@@ -39,4 +39,8 @@ tracing-appender = "0.2"
 
 [[bin]]
 name = "pyfadetop"
-path = "src/bin/pyfadetop.rs"
+path = "src/main.rs"
+
+[[bin]]
+name = "fadetop"
+path = "src/main.rs"
