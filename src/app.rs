@@ -170,7 +170,7 @@ impl TaskHandles {
 }
 
 impl ProfilingState {
-    async fn run_attached<S: SamplerOps>(
+    pub(crate) async fn run_attached<S: SamplerOps>(
         &mut self,
         terminal: &mut DefaultTerminal,
         sampler: S,
@@ -222,17 +222,5 @@ impl ProfilingState {
             periodic_handle,
             sampler_handle,
         }
-    }
-
-    /// Run with direct sampler attachment (CLI mode with PID argument)
-    pub async fn run_direct<S: SamplerOps>(
-        mut self,
-        mut terminal: DefaultTerminal,
-        sampler: S,
-    ) -> Result<(), Error> {
-        let (event_tx, mut event_rx) = tokio::sync::mpsc::channel::<UpdateEvent>(2);
-        let _handles = self.run_event_senders(event_tx, sampler);
-
-        self.run_until_error(&mut terminal, &mut event_rx).await
     }
 }

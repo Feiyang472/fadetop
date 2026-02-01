@@ -68,13 +68,13 @@ pub async fn run() -> Result<(), Error> {
         return crate::demo::run().await;
     }
 
-    let terminal = ratatui::init();
+    let mut terminal = ratatui::init();
 
     let result = if let Some(pid) = args.pid {
         // Direct attach mode (CLI with PID argument)
         ProfilingState::new(&configs)
-            .run_direct(
-                terminal,
+            .run_attached(
+                &mut terminal,
                 subprocess_sampler::SubprocessSampler::from_config_and_id(&configs, pid)?,
             )
             .await
