@@ -58,7 +58,7 @@ impl ProfilingState {
         rx: &mut Receiver<UpdateEvent>,
     ) -> Result<(), Error> {
         while self.running {
-            terminal.draw(|frame| self.render(frame))?;
+            terminal.draw(|frame| self.render_profiles(frame))?;
             match rx.recv().await {
                 None => break,
                 Some(event) => event.update_state(self)?,
@@ -86,7 +86,7 @@ impl ProfilingState {
         }
     }
 
-    pub fn render(&mut self, frame: &mut Frame) {
+    pub(crate) fn render_profiles(&mut self, frame: &mut Frame) {
         let out_block = {
             Block::default()
                 .borders(Borders::NONE)
