@@ -31,8 +31,15 @@ enum Command {
 }
 
 fn init_tracing() -> tracing_appender::non_blocking::WorkerGuard {
-    let file_appender = tracing_appender::rolling::never("/tmp", "fadetop.log");
-    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+    // Opening the log can fail, e.g. under sudo when /tmp/fadetop.log belongs to
+    // another user (fs.protected_regular). Don't let logging stop the app.
+    let file_appender = tracing_appender::rolling::RollingFileAppender::builder()
+        .filename_prefix("fadetop.log")
+        .build(std::env::temp_dir());
+    let (non_blocking, guard) = match file_appender {
+        Ok(appender) => tracing_appender::non_blocking(appender),
+        Err(_) => tracing_appender::non_blocking(std::io::sink()),
+    };
 
     tracing_subscriber::registry()
         .with(EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")))
@@ -68,18 +75,17 @@ pub async fn run() -> Result<(), Error> {
         return crate::demo::run().await;
     }
 
-    let terminal = ratatui::init();
-
     let result = if let Some(pid) = args.pid {
-        // Direct attach mode (CLI with PID argument)
+        // Direct attach mode (CLI with PID argument). Create the sampler before
+        // taking over the terminal so its errors stay visible.
+        let sampler = subprocess_sampler::SubprocessSampler::from_config_and_id(&configs, pid)?;
+        let terminal = ratatui::init();
         ProfilingState::new(&configs)
-            .run_direct(
-                terminal,
-                subprocess_sampler::SubprocessSampler::from_config_and_id(&configs, pid)?,
-            )
+            .run_direct(terminal, sampler)
             .await
     } else {
         // Landing page mode (no PID argument)
+        let terminal = ratatui::init();
         ProcessSelectionState::new()
             .run_with_selection::<subprocess_sampler::SubprocessSampler, SystemProcessDiscovery>(
                 &configs, terminal,

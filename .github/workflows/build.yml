@@ -115,6 +115,59 @@ jobs:
           name: wheels-sdist
           path: dist
 
+  vscode:
+    name: VS Code extension
+    runs-on: ubuntu-latest
+    needs: [linux, windows, macos]
+    permissions:
+      # Used to attach the VSIX files to the GitHub release
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: wheels-*
+          path: wheels
+      - name: Package platform-specific VSIX files
+        working-directory: vscode
+        run: |
+          npm ci
+          VERSION=$(grep -m1 '^version' ../Cargo.toml | cut -d'"' -f2)
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          mkdir -p ../dist-vsix
+          # VS Code target <- wheel artifact holding the binary (musl builds also run on Alpine)
+          while read -r target artifact; do
+            rm -rf bin && mkdir bin
+            unzip -o -j ../wheels/"$artifact"/*.whl '*.data/scripts/fadetop' '*.data/scripts/fadetop.exe' -d bin || true
+            ls bin/fadetop bin/fadetop.exe 2>/dev/null | grep -q . || { echo "no fadetop binary in $artifact"; exit 1; }
+            chmod +x bin/*
+            npx vsce package --target "$target" -o ../dist-vsix/fadetop-"$target"-"$VERSION".vsix
+          done <<'EOF'
+          linux-x64 wheels-linux-x86_64-unknown-linux-musl
+          alpine-x64 wheels-linux-x86_64-unknown-linux-musl
+          linux-arm64 wheels-linux-aarch64-unknown-linux-musl
+          alpine-arm64 wheels-linux-aarch64-unknown-linux-musl
+          linux-armhf wheels-linux-armv7-unknown-linux-musleabihf
+          win32-x64 wheels-windows-x64
+          darwin-arm64 wheels-macos-aarch64
+          EOF
+      - name: Upload VSIX files
+        uses: actions/upload-artifact@v4
+        with:
+          name: vsix
+          path: dist-vsix
+      - name: Attach VSIX files to GitHub release
+        if: ${{ startsWith(github.ref, 'refs/tags/') }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --verify-tag --generate-notes
+          gh release upload "$TAG" dist-vsix/*.vsix --clobber
+
   release:
     name: Release
     runs-on: ubuntu-latest
