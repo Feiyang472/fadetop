@@ -1,0 +1,119 @@
+{
+  "name": "fadetop",
+  "displayName": "FadeTop",
+  "description": "Real-time visualiser for Python stack samples, powered by py-spy.",
+  "version": "0.2.1",
+  "publisher": "Feiyang472",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Feiyang472/fadetop"
+  },
+  "homepage": "https://github.com/Feiyang472/fadetop",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Debuggers",
+    "Visualization"
+  ],
+  "keywords": [
+    "python",
+    "profiler",
+    "py-spy",
+    "flamegraph",
+    "sampling"
+  ],
+  "main": "./out/extension.js",
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    },
+    "virtualWorkspaces": false
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "fadetop.openDashboard",
+        "title": "Open Dashboard",
+        "category": "FadeTop"
+      },
+      {
+        "command": "fadetop.attach",
+        "title": "Attach to Process...",
+        "category": "FadeTop"
+      }
+    ],
+    "configuration": {
+      "title": "FadeTop",
+      "properties": {
+        "fadetop.samplingRate": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "default": null,
+          "minimum": 1,
+          "markdownDescription": "Sampling rate in Hz. Passed as `FADETOP_SAMPLING_RATE`; leave empty to use `fadetop_config.toml` or the built-in default."
+        },
+        "fadetop.windowWidth": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "pattern": "^\\d+[smh]$",
+          "markdownDescription": "Visible time window, e.g. `100s`, `5m`. Passed as `FADETOP_WINDOW_WIDTH`."
+        },
+        "fadetop.configFile": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "scope": "machine-overridable",
+          "markdownDescription": "Path to a FadeTop TOML config file (`FADETOP_CONFIG`). Defaults to `fadetop_config.toml` in the workspace folder."
+        },
+        "fadetop.useSudo": {
+          "type": "boolean",
+          "default": false,
+          "scope": "machine",
+          "markdownDescription": "Run FadeTop through `sudo` (Linux/macOS). Needed when `ptrace` is restricted, see the [permissions notes](https://github.com/Feiyang472/fadetop#permissions)."
+        },
+        "fadetop.binaryPath": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "default": null,
+          "scope": "machine",
+          "markdownDescription": "Use this `fadetop` executable instead of the bundled one (e.g. a local `cargo build`)."
+        },
+        "fadetop.terminalLocation": {
+          "type": "string",
+          "enum": [
+            "editor",
+            "panel"
+          ],
+          "default": "editor",
+          "description": "Where to open the FadeTop terminal."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "vscode:prepublish": "npm run compile && node scripts/copy-license.mjs",
+    "package:local": "node scripts/package-local.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/vscode": "~1.85.0",
+    "@vscode/vsce": "^4.0.0",
+    "typescript": "^5.9.0"
+  }
+}
