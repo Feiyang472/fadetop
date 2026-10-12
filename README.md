@@ -18,6 +18,9 @@ fadetop $PID_OF_YOUR_RUNNING_PYTHON_PROCESS
 # Or run without arguments to open a dashboard that discovers running Python processes
 fadetop
 
+# List running Python processes (add --json for machine-readable output)
+fadetop list-processes
+
 # Run the demo with mock data (no real process needed)
 fadetop demo
 ```

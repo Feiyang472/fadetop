@@ -51,19 +51,25 @@ impl ProcessSelectionState {
         if self.filter_text.is_empty() {
             self.processes.iter().collect()
         } else {
-            let filter_lower = self.filter_text.to_lowercase();
             self.processes
                 .iter()
-                .filter(|p| p.cmdline.to_lowercase().contains(&filter_lower))
+                .filter(|p| p.matches(&self.filter_text))
                 .collect()
         }
     }
 
-    /// Get the currently selected process PID
+    /// Get the currently selected process PID. With no matches, a filter
+    /// that is a number is taken as a PID to attach to directly.
     pub fn selected_pid(&self) -> Option<Pid> {
-        self.filtered_processes()
-            .get(self.selected_index)
-            .map(|p| p.pid)
+        let filtered = self.filtered_processes();
+        if filtered.is_empty() {
+            return self.typed_pid();
+        }
+        filtered.get(self.selected_index).map(|p| p.pid)
+    }
+
+    fn typed_pid(&self) -> Option<Pid> {
+        self.filter_text.trim().parse().ok()
     }
 
     /// Handle keyboard events when this widget has focus
@@ -149,10 +155,12 @@ impl StatefulWidget for ProcessSelectionWidget {
         let filtered = state.filtered_processes();
 
         if filtered.is_empty() {
-            let msg = if state.processes.is_empty() {
-                "No Python processes found. Press 'r' to refresh."
+            let msg = if let Some(pid) = state.typed_pid() {
+                format!("No listed process matches. Press Enter to attach to PID {pid}.")
+            } else if state.processes.is_empty() {
+                "No Python processes found. Press 'r' to refresh.".to_string()
             } else {
-                "No matches. Press Backspace or Esc to clear filter."
+                "No matches. Press Backspace or Esc to clear filter.".to_string()
             };
             Paragraph::new(msg)
                 .style(Style::default().fg(Color::DarkGray))
@@ -168,9 +176,19 @@ impl StatefulWidget for ProcessSelectionWidget {
                     format!("{:>8} ", proc.pid),
                     Style::default().fg(Color::Cyan),
                 );
-                let cmd_span = Span::raw(&proc.cmdline);
+                let summary_span = Span::styled(
+                    format!("{:<16} ", proc.summary()),
+                    Style::default().fg(Color::DarkGray),
+                );
+                let mut spans = vec![pid_span, summary_span, Span::raw(&proc.name)];
+                if proc.name != proc.cmdline {
+                    spans.push(Span::styled(
+                        format!("  {}", proc.cmdline),
+                        Style::default().fg(Color::DarkGray),
+                    ));
+                }
 
-                let mut line = Line::from(vec![pid_span, cmd_span]);
+                let mut line = Line::from(spans);
 
                 if i == state.selected_index {
                     line = line.bg(Color::Blue).bold();

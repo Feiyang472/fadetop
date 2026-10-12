@@ -1,15 +1,24 @@
+import { execFile } from "child_process";
 import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
-import { discoverPythonProcesses, displayName, PythonProcess } from "./processes";
 
 export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
-        vscode.commands.registerCommand("fadetop.openDashboard", () => launch(context, [], "FadeTop")),
+        vscode.commands.registerCommand("fadetop.openDashboard", async () => {
+            const binary = resolveBinary(context);
+            if (binary) {
+                await launch(binary, [], "FadeTop");
+            }
+        }),
         vscode.commands.registerCommand("fadetop.attach", async (pid?: number) => {
-            pid ??= await pickProcess();
+            const binary = resolveBinary(context);
+            if (!binary) {
+                return;
+            }
+            pid ??= await pickProcess(binary);
             if (pid !== undefined) {
-                await launch(context, [String(pid)], `FadeTop: ${pid}`);
+                await launch(binary, [String(pid)], `FadeTop: ${pid}`);
             }
         }),
     );
@@ -87,15 +96,12 @@ async function checkPtrace(useSudo: boolean): Promise<"ok" | "sudo" | "cancel"> 
     return choice === "Continue anyway" ? "ok" : "cancel";
 }
 
+const EXIT_PROMPT = "fadetop exited with code %s, press Enter to close";
 const HOLD_ON_FAILURE =
     '"$@"; code=$?; if [ "$code" -ne 0 ]; then ' +
-    'printf "\\n[fadetop exited with code %s, press Enter to close]" "$code"; read -r _; fi';
+    `printf "\\n[${EXIT_PROMPT}]" "$code"; read -r _; fi`;
 
-async function launch(context: vscode.ExtensionContext, args: string[], name: string) {
-    const binary = resolveBinary(context);
-    if (!binary) {
-        return;
-    }
+async function launch(binary: string, args: string[], name: string) {
     const config = vscode.workspace.getConfiguration("fadetop");
     let useSudo = config.get<boolean>("useSudo", false) && process.platform !== "win32";
     const ptrace = await checkPtrace(useSudo);
@@ -104,16 +110,25 @@ async function launch(context: vscode.ExtensionContext, args: string[], name: st
     }
     useSudo ||= ptrace === "sudo";
 
+    // Keep the terminal open on failure so the error can be read.
     const env = configEnv();
-    let shellPath = binary;
-    let shellArgs = args;
-    if (process.platform !== "win32") {
+    let shellPath: string;
+    let shellArgs: string[];
+    if (process.platform === "win32") {
+        const quoted = `'${binary.replace(/'/g, "''")}'`;
+        shellPath = "powershell.exe";
+        shellArgs = [
+            "-NoProfile",
+            "-Command",
+            `& ${quoted} ${args.join(" ")}; if ($LASTEXITCODE) { ` +
+                `Read-Host "\`n[${EXIT_PROMPT.replace("%s", "$LASTEXITCODE")}]" }`,
+        ];
+    } else {
         let command = [binary, ...args];
         if (useSudo) {
             // sudo resets the environment, so pass settings through `env`.
             command = ["sudo", "env", ...Object.entries(env).map(([k, v]) => `${k}=${v}`), ...command];
         }
-        // Keep the terminal open on failure so the error can be read.
         shellPath = "/bin/sh";
         shellArgs = ["-c", HOLD_ON_FAILURE, "fadetop", ...command];
     }
@@ -133,22 +148,45 @@ async function launch(context: vscode.ExtensionContext, args: string[], name: st
     terminal.show();
 }
 
+/** Shape of `fadetop list-processes --json` (src/processes.rs). */
+interface PythonProcess {
+    pid: number;
+    name: string;
+    cmdline: string;
+    summary: string;
+}
+
+function listProcesses(binary: string): Promise<PythonProcess[]> {
+    return new Promise((resolve, reject) =>
+        execFile(binary, ["list-processes", "--json"], { windowsHide: true }, (err, stdout, stderr) => {
+            if (err) {
+                reject(new Error(stderr.trim() || err.message));
+                return;
+            }
+            try {
+                resolve(JSON.parse(stdout));
+            } catch (parseErr) {
+                reject(parseErr);
+            }
+        }),
+    );
+}
+
 interface ProcessItem extends vscode.QuickPickItem {
     pid: number;
 }
 
 function toItem(p: PythonProcess): ProcessItem {
-    const name = displayName(p);
     return {
         pid: p.pid,
-        label: `$(pulse) ${name}`,
-        description: `PID ${p.pid}`,
-        detail: name === p.cmdline ? undefined : p.cmdline,
+        label: `$(pulse) ${p.name}`,
+        description: [`PID ${p.pid}`, p.summary].filter(Boolean).join(" · "),
+        detail: p.name === p.cmdline ? undefined : p.cmdline,
     };
 }
 
-/** Quick-pick mirror of the TUI dashboard's process selection list. */
-function pickProcess(): Promise<number | undefined> {
+/** Quick-pick version of the TUI dashboard's process selection list. */
+function pickProcess(binary: string): Promise<number | undefined> {
     return new Promise((resolve) => {
         const qp = vscode.window.createQuickPick<ProcessItem>();
         const refreshButton: vscode.QuickInputButton = {
@@ -156,31 +194,50 @@ function pickProcess(): Promise<number | undefined> {
             tooltip: "Refresh",
         };
         qp.buttons = [refreshButton];
-        qp.placeholder = "Filter by command line, or type a PID";
+        qp.placeholder = "Filter by name, command line or PID, or type a PID";
         qp.matchOnDescription = true;
         qp.matchOnDetail = true;
 
         let discovered: ProcessItem[] = [];
         const render = () => {
+            const active = qp.activeItems[0]?.pid;
             const typedPid = /^\d+$/.test(qp.value.trim()) ? Number(qp.value.trim()) : undefined;
             const manual: ProcessItem[] =
                 typedPid !== undefined && !discovered.some((i) => i.pid === typedPid)
                     ? [{ pid: typedPid, label: `$(debug-disconnect) Attach to PID ${typedPid}`, alwaysShow: true }]
                     : [];
             qp.items = [...manual, ...discovered];
+            // Keep the highlighted process across refreshes.
+            const keep = qp.items.find((i) => i.pid === active);
+            if (keep) {
+                qp.activeItems = [keep];
+            }
         };
+
+        let refreshing = false;
+        let warned = false;
         const refresh = async () => {
+            if (refreshing) {
+                return;
+            }
+            refreshing = true;
             qp.busy = true;
             try {
-                discovered = (await discoverPythonProcesses()).map(toItem);
+                discovered = (await listProcesses(binary)).map(toItem);
+                qp.title = `Select Python Process (${discovered.length} found)`;
             } catch (err) {
-                discovered = [];
-                vscode.window.showWarningMessage(`FadeTop: could not list processes: ${err}`);
+                qp.title = "Select Python Process (listing failed)";
+                if (!warned) {
+                    warned = true;
+                    vscode.window.showWarningMessage(`FadeTop: could not list processes: ${err}`);
+                }
             }
-            qp.title = `Select Python Process (${discovered.length} found)`;
             qp.busy = false;
+            refreshing = false;
             render();
         };
+        // Same cadence as the TUI dashboard.
+        const timer = setInterval(refresh, 2000);
 
         let done = false;
         qp.onDidChangeValue(render);
@@ -194,6 +251,7 @@ function pickProcess(): Promise<number | undefined> {
             }
         });
         qp.onDidHide(() => {
+            clearInterval(timer);
             if (!done) {
                 resolve(undefined);
             }
