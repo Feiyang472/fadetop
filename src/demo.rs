@@ -15,28 +15,19 @@ pub struct MockProcessDiscovery;
 
 impl ProcessDiscovery for MockProcessDiscovery {
     fn discover() -> Vec<PythonProcess> {
-        vec![
-            PythonProcess {
-                pid: 1001,
-                cmdline: "python3 /home/user/scripts/web_server.py --port 8080".to_string(),
-            },
-            PythonProcess {
-                pid: 1002,
-                cmdline: "python3 -m pytest tests/".to_string(),
-            },
-            PythonProcess {
-                pid: 1003,
-                cmdline: "python /usr/bin/jupyter notebook".to_string(),
-            },
-            PythonProcess {
-                pid: 2001,
-                cmdline: "python3 data_pipeline.py --input data.csv".to_string(),
-            },
-            PythonProcess {
-                pid: 3456,
-                cmdline: "python3 -c 'import time; time.sleep(3600)'".to_string(),
-            },
+        [
+            (1001, "python3 /home/user/scripts/web_server.py --port 8080"),
+            (1002, "python3 -m pytest tests/"),
+            (1003, "python /usr/bin/jupyter notebook"),
+            (2001, "python3 data_pipeline.py --input data.csv"),
+            (3456, "python3 -c import time; time.sleep(3600)"),
         ]
+        .into_iter()
+        .map(|(pid, cmdline)| {
+            let args: Vec<&str> = cmdline.splitn(3, ' ').collect();
+            PythonProcess::new(pid, &args)
+        })
+        .collect()
     }
 }
 

@@ -1,43 +1,82 @@
-//! Tests for `fadetop::processes::PythonProcess::display_name`.
+//! Tests for `fadetop::processes`.
 
-use fadetop::processes::PythonProcess;
-
-fn proc(cmdline: &str) -> PythonProcess {
-    PythonProcess {
-        pid: 1,
-        cmdline: cmdline.to_string(),
-    }
-}
+use fadetop::processes::{PythonProcess, display_name, is_python_executable};
 
 #[test]
 fn display_name_returns_script_path() {
-    let p = proc("python3 /home/user/scripts/web_server.py --port 8080");
-    assert_eq!(p.display_name(), "/home/user/scripts/web_server.py");
+    let args = [
+        "python3",
+        "/home/user/scripts/web_server.py",
+        "--port",
+        "8080",
+    ];
+    assert_eq!(display_name(&args), "/home/user/scripts/web_server.py");
 }
 
 #[test]
-fn display_name_skips_dash_arg_and_falls_back_to_full_cmdline() {
-    // `-m pytest` — the second token starts with '-', so the helper gives up
-    // and returns the full cmdline. (Documents the current behavior — this is
-    // arguably suboptimal but is what the code does today.)
-    let p = proc("python3 -m pytest tests/");
-    assert_eq!(p.display_name(), "python3 -m pytest tests/");
+fn display_name_shows_module() {
+    assert_eq!(
+        display_name(&["python3", "-m", "pytest", "tests/"]),
+        "-m pytest"
+    );
+    assert_eq!(display_name(&["python3", "-mpytest"]), "-m pytest");
 }
 
 #[test]
-fn display_name_skips_short_flag_arg() {
-    let p = proc("python3 -c 'import time; time.sleep(3600)'");
-    assert_eq!(p.display_name(), "python3 -c 'import time; time.sleep(3600)'");
+fn display_name_shows_inline_code() {
+    let args = ["python3", "-c", "import time; time.sleep(3600)"];
+    assert_eq!(display_name(&args), "-c import time; time.sleep(3600)");
+}
+
+#[test]
+fn display_name_skips_interpreter_options() {
+    let args = [
+        "python3", "-u", "-X", "dev", "-W", "error", "train.py", "--lr", "3",
+    ];
+    assert_eq!(display_name(&args), "train.py");
 }
 
 #[test]
 fn display_name_with_only_interpreter_returns_cmdline() {
-    let p = proc("python3");
-    assert_eq!(p.display_name(), "python3");
+    assert_eq!(display_name(&["python3"]), "python3");
+    assert_eq!(display_name(&["python3", "-i"]), "python3 -i");
 }
 
 #[test]
 fn display_name_handles_empty_cmdline() {
-    let p = proc("");
-    assert_eq!(p.display_name(), "");
+    assert_eq!(display_name::<&str>(&[]), "");
+}
+
+#[test]
+fn recognises_python_executables() {
+    for name in [
+        "python",
+        "python3",
+        "python3.12",
+        "python3.13t",
+        "python.exe",
+        "pythonw.exe",
+        "Python3.11.EXE",
+    ] {
+        assert!(is_python_executable(name), "{name}");
+    }
+    for name in [
+        "pythonista",
+        "python-lsp-server",
+        "ipython",
+        "pip",
+        "",
+        "py",
+    ] {
+        assert!(!is_python_executable(name), "{name}");
+    }
+}
+
+#[test]
+fn filter_matches_pid_name_and_cmdline() {
+    let p = PythonProcess::new(4242, &["python3", "-m", "http.server", "8000"]);
+    assert!(p.matches("4242"));
+    assert!(p.matches("HTTP"));
+    assert!(p.matches("8000"));
+    assert!(!p.matches("pytest"));
 }

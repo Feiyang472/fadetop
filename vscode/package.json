@@ -2,7 +2,7 @@
   "name": "fadetop",
   "displayName": "FadeTop",
   "description": "Real-time visualiser for Python stack samples, powered by py-spy.",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "publisher": "Feiyang472",
   "license": "MIT",
   "repository": {

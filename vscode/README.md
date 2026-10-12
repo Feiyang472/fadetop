@@ -8,7 +8,7 @@ This extension bundles the [FadeTop](https://github.com/Feiyang472/fadetop) bina
 
 ## Commands
 
-- **FadeTop: Attach to Process...** lists running Python processes (filter by command line, or type a PID) and attaches to the one you pick.
+- **FadeTop: Attach to Process...** lists running Python processes with their memory use and uptime, refreshing every 2 seconds. Filter by name, command line or PID, or type any PID, and FadeTop attaches to the one you pick. It is the same list the dashboard shows.
 - **FadeTop: Open Dashboard** opens the FadeTop process-selection dashboard.
 
 ## Permissions

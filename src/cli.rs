@@ -5,8 +5,12 @@ use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use remoteprocess::Pid;
 
 use crate::{
-    app::SamplerOps, config::AppConfig, processes::SystemProcessDiscovery, state::ProfilingState,
-    subprocess_sampler, tabs::process_selection::ProcessSelectionState,
+    app::SamplerOps,
+    config::AppConfig,
+    processes::{ProcessDiscovery, SystemProcessDiscovery},
+    state::ProfilingState,
+    subprocess_sampler,
+    tabs::process_selection::ProcessSelectionState,
 };
 
 #[derive(Parser, Debug)]
@@ -25,6 +29,12 @@ enum Command {
     SubprocessWorker,
     /// Show the current configuration and exit
     ShowConfig,
+    /// List running Python processes and exit
+    ListProcesses {
+        /// Print JSON (used by the VS Code extension)
+        #[arg(long)]
+        json: bool,
+    },
     /// Run the demo with mock data (no real process attachment)
     #[cfg(feature = "demo")]
     Demo,
@@ -61,6 +71,10 @@ pub async fn run() -> Result<(), Error> {
         return subprocess_sampler::run_worker();
     }
 
+    if let Some(Command::ListProcesses { json }) = args.command {
+        return list_processes(json);
+    }
+
     let configs = AppConfig::from_configs()?;
 
     // Handle show-config command
@@ -95,4 +109,16 @@ pub async fn run() -> Result<(), Error> {
 
     ratatui::restore();
     result
+}
+
+fn list_processes(json: bool) -> Result<(), Error> {
+    let processes = SystemProcessDiscovery::discover();
+    if json {
+        println!("{}", serde_json::to_string(&processes)?);
+    } else {
+        for p in &processes {
+            println!("{:>8}  {:<16}  {}", p.pid, p.summary(), p.cmdline);
+        }
+    }
+    Ok(())
 }
